@@ -1,0 +1,230 @@
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StepIndicator, CHECKOUT_STEPS } from "@/components/StepIndicator";
+import { QuantitySelector } from "@/components/QuantitySelector";
+import { PriceDisplay } from "@/components/PriceDisplay";
+import { ConsentCheckbox, DEFAULT_CONSENT_ITEMS } from "@/components/ConsentCheckbox";
+import { calcDynamicPrice, getFacilityInfo, formatPrice } from "@/lib/pricing";
+import { calcEstimatedWaitTime, formatWaitTime } from "@/lib/waitTime";
+import { useAuth } from "@/hooks/useAuth";
+import { ArrowLeft, ArrowRight, Ticket, MapPin, Clock, AlertTriangle } from "lucide-react";
+import sugukuruLogo from "@/assets/sugukuru-logo.png";
+
+export default function Buy() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user, profile, loading } = useAuth();
+  
+  // URLから施設IDを取得（例: /buy?facility=store-a）
+  const facilityId = searchParams.get("facility") || "default";
+  
+  // 施設情報とダイナミックプライシング
+  const facility = getFacilityInfo(facilityId);
+  const unitPrice = useMemo(() => calcDynamicPrice(facilityId), [facilityId]);
+  
+  // ステップ管理
+  const [step, setStep] = useState(1);
+  const [quantity, setQuantity] = useState(1);
+  const [consents, setConsents] = useState(DEFAULT_CONSENT_ITEMS);
+  
+  const allConsented = consents.every((c) => c.checked);
+
+  // 待ち時間計算
+  const waitTime = useMemo(() => calcEstimatedWaitTime(facilityId, quantity), [facilityId, quantity]);
+  
+  const handleConsentChange = (id: string, checked: boolean) => {
+    setConsents((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, checked } : item))
+    );
+  };
+
+  // Handle purchase flow
+  const handlePurchase = () => {
+    // Check if user is logged in
+    if (!user) {
+      // Redirect to auth with return params
+      const params = new URLSearchParams({
+        facility: facilityId,
+        quantity: String(quantity),
+      });
+      navigate(`/auth?${params.toString()}`);
+      return;
+    }
+
+    // Check if user has payment method
+    if (!profile?.has_payment_method) {
+      const params = new URLSearchParams({
+        facility: facilityId,
+        quantity: String(quantity),
+      });
+      navigate(`/card-setup?${params.toString()}`);
+      return;
+    }
+
+    // Proceed to temp ticket
+    const params = new URLSearchParams({
+      facility: facilityId,
+      quantity: String(quantity),
+      unitPrice: String(unitPrice),
+    });
+    navigate(`/temp-ticket?${params.toString()}`);
+  };
+  
+  const renderStep = () => {
+    switch (step) {
+      case 1:
+        return (
+          <div className="space-y-6">
+            <QuantitySelector
+              quantity={quantity} 
+              onChange={setQuantity} 
+              maxQuantity={6}
+              label="購入枚数を選択"
+            />
+            
+            {/* 利用人数制限の注意書き */}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg p-3">
+              <AlertTriangle className="w-4 h-4" />
+              <span>SUGUKURUご利用人数は1組6名様までです。</span>
+            </div>
+
+            <PriceDisplay unitPrice={unitPrice} quantity={quantity} />
+          </div>
+        );
+      
+      case 2:
+        return (
+          <div className="space-y-6">
+            <ConsentCheckbox items={consents} onChange={handleConsentChange} />
+            {!allConsented && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                <AlertTriangle className="w-4 h-4" />
+                <span>すべての項目に同意してください</span>
+              </div>
+            )}
+          </div>
+        );
+      
+      case 3:
+        return (
+          <div className="space-y-6">
+            <div className="bg-accent/30 rounded-lg p-4 space-y-3">
+              <h3 className="font-medium text-foreground">購入内容の確認</h3>
+              
+              <div className="flex items-center gap-2 text-sm">
+                <MapPin className="w-4 h-4 text-muted-foreground" />
+                <span className="text-muted-foreground">施設:</span>
+                <span className="font-medium text-foreground">{facility.name}</span>
+              </div>
+              
+              <div className="flex items-center gap-2 text-sm">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <span className="text-muted-foreground">購入日時:</span>
+                <span className="font-medium text-foreground">
+                  {new Date().toLocaleString("ja-JP")}
+                </span>
+              </div>
+            </div>
+            
+            <PriceDisplay unitPrice={unitPrice} quantity={quantity} showPeakBadge={false} />
+            
+            <p className="text-xs text-muted-foreground text-center">
+              「チケットを確保する」をクリックすると、仮チケット画面に移動します
+            </p>
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
+  
+  return (
+    <div className="min-h-screen bg-background py-8 px-4">
+      <div className="max-w-md mx-auto space-y-6">
+        {/* ヘッダー */}
+        <div className="text-center space-y-2">
+          <img src={sugukuruLogo} alt="SUGUKURU" className="h-10 mx-auto" />
+          <p className="text-sm text-muted-foreground">FastPass購入</p>
+        </div>
+        
+        {/* 施設情報カード */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              <CardTitle className="text-lg">{facility.name}</CardTitle>
+            </div>
+            <CardDescription>{facility.description}</CardDescription>
+          </CardHeader>
+        </Card>
+        
+        {/* メインカード */}
+        <Card>
+          <CardHeader>
+            <StepIndicator steps={CHECKOUT_STEPS} currentStep={step} />
+          </CardHeader>
+          
+          <CardContent className="space-y-6">
+            {renderStep()}
+            
+            {/* ナビゲーションボタン */}
+            <div className="flex gap-3">
+              {step > 1 && (
+                <Button
+                  variant="outline"
+                  onClick={() => setStep(step - 1)}
+                  className="flex-1"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  戻る
+                </Button>
+              )}
+              
+              {step < 3 ? (
+                <Button
+                  onClick={() => setStep(step + 1)}
+                  disabled={step === 2 && !allConsented}
+                  className="flex-1"
+                >
+                  次へ
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handlePurchase}
+                  className="flex-1"
+                  disabled={loading}
+                >
+                  <Ticket className="w-4 h-4 mr-2" />
+                  {loading ? "読み込み中..." : "チケットを確保する"}
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* 注意事項 */}
+        <Card className="bg-destructive/5 border-destructive/20">
+          <CardContent className="pt-4 space-y-2">
+            <p className="font-bold text-sm text-destructive">！注意点！</p>
+            <ul className="text-xs text-muted-foreground space-y-1">
+              <li>* こちら優先的に案内されるチケットです。お食事代とは別になります。</li>
+              <li>* 1組6名様以上はご利用できません（1組6名様までSUGUKURUの利用ができます）</li>
+              <li>※SUGUKURU利用時にお席の指定はできません（空き次第のご案内になります）</li>
+              <li>※SUGUKURUチケットの事前購入はできません（必ず来店してからご購入ください。スタッフが日時の確認を行います）</li>
+              <li>※購入後、直ぐに店舗スタッフへチケットをご提示ください</li>
+            </ul>
+          </CardContent>
+        </Card>
+        
+        {/* フッター */}
+        <p className="text-xs text-center text-muted-foreground">
+          © SUGUKURU - スグクル
+        </p>
+      </div>
+    </div>
+  );
+}

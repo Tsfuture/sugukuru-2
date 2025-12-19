@@ -1,0 +1,16 @@
+project_id = "xqepqbfsslfziivyfwie"
+
+[functions.checkout]
+verify_jwt = false
+
+[functions.store-checkout]
+verify_jwt = false
+
+[functions.setup-card]
+verify_jwt = true
+
+[functions.process-payment]
+verify_jwt = true
+
+[functions.create-setup-intent]
+verify_jwt = true

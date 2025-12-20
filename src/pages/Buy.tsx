@@ -1,28 +1,70 @@
-import { useState, useMemo, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StepIndicator, CHECKOUT_STEPS } from "@/components/StepIndicator";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import { PriceDisplay } from "@/components/PriceDisplay";
 import { ConsentCheckbox, DEFAULT_CONSENT_ITEMS } from "@/components/ConsentCheckbox";
-import { calcDynamicPrice, getFacilityInfo, formatPrice } from "@/lib/pricing";
+import { formatPrice } from "@/lib/pricing";
 import { calcEstimatedWaitTime, formatWaitTime } from "@/lib/waitTime";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, ArrowRight, Ticket, MapPin, Clock, AlertTriangle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { ArrowLeft, ArrowRight, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
+
+type StoreRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  fastpass_price: number;
+  current_wait_time: number;
+  is_open: boolean;
+};
 
 export default function Buy() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   
-  // URLから施設IDを取得（例: /buy?facility=store-a）
-  const facilityId = searchParams.get("facility") || "default";
+  // URLから店舗IDを取得（store優先、互換でfacilityも読む）
+  const storeId = searchParams.get("store") || searchParams.get("facility");
   
-  // 施設情報とダイナミックプライシング
-  const facility = getFacilityInfo(facilityId);
-  const unitPrice = useMemo(() => calcDynamicPrice(facilityId), [facilityId]);
+  // Supabaseからstore取得
+  const [store, setStore] = useState<StoreRow | null>(null);
+  const [loadingStore, setLoadingStore] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchStore() {
+      if (!storeId) {
+        setLoadingStore(false);
+        return;
+      }
+      setLoadingStore(true);
+      setStoreError(null);
+
+      const { data, error } = await supabase
+        .from("stores")
+        .select("id,name,description,fastpass_price,current_wait_time,is_open")
+        .eq("id", storeId)
+        .single();
+
+      if (error) {
+        console.error("Store fetch error:", error);
+        setStoreError("店舗情報の取得に失敗しました");
+        setStore(null);
+      } else {
+        setStore(data as StoreRow);
+      }
+      setLoadingStore(false);
+    }
+
+    fetchStore();
+  }, [storeId]);
+
+  // 店舗から価格を取得
+  const unitPrice = store?.fastpass_price ?? 0;
   
   // ステップ管理
   const [step, setStep] = useState(1);
@@ -32,7 +74,7 @@ export default function Buy() {
   const allConsented = consents.every((c) => c.checked);
 
   // 待ち時間計算
-  const waitTime = useMemo(() => calcEstimatedWaitTime(facilityId, quantity), [facilityId, quantity]);
+  const waitTime = calcEstimatedWaitTime(storeId || "default", quantity);
   
   const handleConsentChange = (id: string, checked: boolean) => {
     setConsents((prev) =>
@@ -42,11 +84,13 @@ export default function Buy() {
 
   // Handle purchase flow
   const handlePurchase = () => {
+    if (!storeId) return;
+
     // Check if user is logged in
     if (!user) {
       // Redirect to auth with return params
       const params = new URLSearchParams({
-        facility: facilityId,
+        store: storeId,
         quantity: String(quantity),
       });
       navigate(`/auth?${params.toString()}`);
@@ -56,7 +100,7 @@ export default function Buy() {
     // Check if user has payment method
     if (!profile?.has_payment_method) {
       const params = new URLSearchParams({
-        facility: facilityId,
+        store: storeId,
         quantity: String(quantity),
       });
       navigate(`/card-setup?${params.toString()}`);
@@ -65,12 +109,80 @@ export default function Buy() {
 
     // Proceed to temp ticket
     const params = new URLSearchParams({
-      facility: facilityId,
+      store: storeId,
       quantity: String(quantity),
       unitPrice: String(unitPrice),
     });
     navigate(`/temp-ticket?${params.toString()}`);
   };
+
+  // ローディング表示
+  if (loadingStore) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground">店舗情報を読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 店舗IDがない場合
+  if (!storeId) {
+    return (
+      <div className="min-h-screen bg-background py-8 px-4">
+        <div className="max-w-md mx-auto space-y-6">
+          <div className="text-center space-y-2">
+            <img src={sugukuruLogo} alt="SUGUKURU" className="h-10 mx-auto" />
+          </div>
+          <Card className="border-destructive/50">
+            <CardContent className="pt-6 text-center space-y-4">
+              <AlertTriangle className="w-12 h-12 text-destructive mx-auto" />
+              <h2 className="text-lg font-bold">店舗が選択されていません</h2>
+              <p className="text-sm text-muted-foreground">
+                QRコードをスキャンするか、店舗一覧から選択してください。
+              </p>
+              <Button asChild>
+                <Link to="/">
+                  <Home className="w-4 h-4 mr-2" />
+                  トップに戻る
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // 店舗が見つからない場合
+  if (!store || storeError) {
+    return (
+      <div className="min-h-screen bg-background py-8 px-4">
+        <div className="max-w-md mx-auto space-y-6">
+          <div className="text-center space-y-2">
+            <img src={sugukuruLogo} alt="SUGUKURU" className="h-10 mx-auto" />
+          </div>
+          <Card className="border-destructive/50">
+            <CardContent className="pt-6 text-center space-y-4">
+              <AlertTriangle className="w-12 h-12 text-destructive mx-auto" />
+              <h2 className="text-lg font-bold">店舗が見つかりません</h2>
+              <p className="text-sm text-muted-foreground">
+                {storeError || "指定されたIDの店舗が存在しません。URLをご確認ください。"}
+              </p>
+              <Button asChild>
+                <Link to="/">
+                  <Home className="w-4 h-4 mr-2" />
+                  トップに戻る
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
   
   const renderStep = () => {
     switch (step) {
@@ -115,8 +227,8 @@ export default function Buy() {
               
               <div className="flex items-center gap-2 text-sm">
                 <MapPin className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">施設:</span>
-                <span className="font-medium text-foreground">{facility.name}</span>
+                <span className="text-muted-foreground">店舗:</span>
+                <span className="font-medium text-foreground">{store.name}</span>
               </div>
               
               <div className="flex items-center gap-2 text-sm">
@@ -150,14 +262,14 @@ export default function Buy() {
           <p className="text-sm text-muted-foreground">FastPass購入</p>
         </div>
         
-        {/* 施設情報カード */}
+        {/* 店舗情報カード */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <MapPin className="w-5 h-5 text-primary" />
-              <CardTitle className="text-lg">{facility.name}</CardTitle>
+              <CardTitle className="text-lg">{store.name}</CardTitle>
             </div>
-            <CardDescription>{facility.description}</CardDescription>
+            <CardDescription>{store.description || "FastPass対応店舗"}</CardDescription>
           </CardHeader>
         </Card>
         
@@ -196,10 +308,10 @@ export default function Buy() {
                 <Button
                   onClick={handlePurchase}
                   className="flex-1"
-                  disabled={loading}
+                  disabled={authLoading}
                 >
                   <Ticket className="w-4 h-4 mr-2" />
-                  {loading ? "読み込み中..." : "チケットを確保する"}
+                  {authLoading ? "読み込み中..." : "チケットを確保する"}
                 </Button>
               )}
             </div>

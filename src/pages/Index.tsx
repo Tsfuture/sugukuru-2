@@ -204,7 +204,7 @@ export default function Index() {
                       size="sm"
                       disabled={!store.is_open}
                     >
-                      <Link to={`/buy/${store.id}`}>
+                      <Link to={`/buy?store=${store.id}`}>
                         FastPassを購入
                         <ArrowRight className="w-4 h-4 ml-1" />
                       </Link>

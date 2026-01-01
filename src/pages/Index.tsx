@@ -17,6 +17,22 @@ interface Store {
   is_open: boolean;
 }
 
+// get-price API response type
+interface GetPriceResponse {
+  price_yen: number;
+  breakdown: {
+    base_price: number;
+  };
+  store: {
+    id: string;
+    name: string;
+    description: string | null;
+    is_open: boolean;
+  };
+  dynamic_enabled: boolean;
+  slot_id: string;
+}
+
 function isPeakTime(): boolean {
   const hour = new Date().getHours();
   return hour >= 18 && hour < 21;
@@ -30,6 +46,8 @@ export default function Index() {
   const { t } = useTranslation();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dynamicPrices, setDynamicPrices] = useState<Record<string, number>>({});
+  const [pricesLoading, setPricesLoading] = useState(false);
   const { user } = useAuth();
   const peak = isPeakTime();
 
@@ -56,6 +74,43 @@ export default function Index() {
 
     fetchStores();
   }, []);
+
+  // 各店舗のダイナミック価格を並列取得
+  useEffect(() => {
+    async function fetchDynamicPrices() {
+      if (stores.length === 0) return;
+      
+      setPricesLoading(true);
+      const prices: Record<string, number> = {};
+      
+      // 並列でget-price APIを呼び出し
+      const pricePromises = stores.map(async (store) => {
+        try {
+          const response = await supabase.functions.invoke<GetPriceResponse>("get-price", {
+            body: { store_id: store.id },
+          });
+          
+          if (response.data && !response.error) {
+            prices[store.id] = response.data.price_yen;
+          }
+        } catch (err) {
+          console.error(`get-price error for ${store.id}:`, err);
+          // フォールバック価格はprices辞書に入れない（後でfastpass_priceを使う）
+        }
+      });
+      
+      await Promise.all(pricePromises);
+      setDynamicPrices(prices);
+      setPricesLoading(false);
+    }
+
+    fetchDynamicPrices();
+  }, [stores]);
+
+  // 店舗の表示価格を取得（ダイナミック価格があればそれを、なければfastpass_priceを使用）
+  const getDisplayPrice = (store: Store): number => {
+    return dynamicPrices[store.id] ?? store.fastpass_price;
+  };
   
   return (
     <div className="min-h-screen bg-background">
@@ -191,7 +246,9 @@ export default function Index() {
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-start">
                       <span className="font-bold text-primary text-xl">
-                        {formatPrice(store.fastpass_price)}{t('stores.priceFrom')}
+                        {pricesLoading && !dynamicPrices[store.id] 
+                          ? `${formatPrice(store.fastpass_price)}…` 
+                          : formatPrice(getDisplayPrice(store))}{t('stores.priceFrom')}
                       </span>
                     </div>
                     <Button 

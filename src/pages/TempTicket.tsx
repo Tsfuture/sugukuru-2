@@ -19,6 +19,28 @@ interface Store {
   is_open: boolean;
 }
 
+// get-price API response type
+interface GetPriceResponse {
+  price_yen: number;
+  breakdown: {
+    base_price: number;
+    util: number;
+    slot_purchases: number;
+    step_effect: number;
+    wait_effect: number;
+    env_effect: number;
+    final_multiplier: number;
+  };
+  store: {
+    id: string;
+    name: string;
+    description: string | null;
+    is_open: boolean;
+  };
+  dynamic_enabled: boolean;
+  slot_id: string;
+}
+
 export default function TempTicket() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -33,19 +55,64 @@ export default function TempTicket() {
   const [priceLoading, setPriceLoading] = useState(true);
   const [priceError, setPriceError] = useState<string | null>(null);
 
-  // 表示用価格（DBから取得、決済後はサーバーレスポンスで更新）
+  // 表示用価格（get-price APIから取得、決済後はサーバーレスポンスで更新）
   const [displayUnitPrice, setDisplayUnitPrice] = useState<number>(0);
   const [displayTotalPrice, setDisplayTotalPrice] = useState<number>(0);
 
   const [processing, setProcessing] = useState(false);  
   // ★ 冪等キー: 購入フロー開始時に1回だけ生成し、同一フロー中は再生成しない
   const [orderKey] = useState(() => crypto.randomUUID());
-  // DBから店舗情報・価格を取得
+  
+  // get-price APIから店舗情報・価格を取得
   useEffect(() => {
-    async function fetchStore() {
+    async function fetchPriceAndStore() {
       setPriceLoading(true);
       setPriceError(null);
 
+      try {
+        // get-price API を呼び出してダイナミック価格を取得
+        const response = await supabase.functions.invoke<GetPriceResponse>("get-price", {
+          body: { store_id: facilityId },
+        });
+
+        if (response.error) {
+          console.error("get-price error:", response.error);
+          // フォールバック: DBから直接取得
+          await fallbackFetchStore();
+          return;
+        }
+
+        if (response.data) {
+          const priceData = response.data;
+          
+          if (!priceData.store.is_open) {
+            setPriceError("この施設は現在営業していません");
+            setPriceLoading(false);
+            return;
+          }
+
+          // Store情報を設定
+          setStore({
+            id: priceData.store.id,
+            name: priceData.store.name,
+            fastpass_price: priceData.breakdown.base_price,
+            peak_extra_price: 0,
+            is_open: priceData.store.is_open,
+          });
+
+          // ダイナミック価格を設定
+          setDisplayUnitPrice(priceData.price_yen);
+          setDisplayTotalPrice(priceData.price_yen * quantity);
+          setPriceLoading(false);
+        }
+      } catch (err) {
+        console.error("get-price fetch error:", err);
+        await fallbackFetchStore();
+      }
+    }
+
+    // フォールバック: DBから直接店舗情報を取得
+    async function fallbackFetchStore() {
       const { data, error } = await supabase
         .from("stores")
         .select("id, name, fastpass_price, peak_extra_price, is_open")
@@ -84,7 +151,7 @@ export default function TempTicket() {
       setPriceLoading(false);
     }
 
-    fetchStore();
+    fetchPriceAndStore();
   }, [facilityId, quantity]);
 
   const purchaseDate = new Date().toLocaleString("ja-JP", {

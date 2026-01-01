@@ -122,6 +122,16 @@ export type Database = {
           name: string
           peak_extra_price: number
           updated_at: string
+          dynamic_enabled: boolean
+          avg_spend_yen: number
+          turnover_per_hour: number
+          target_fastpass_per_hour: number
+          min_price: number
+          max_price: number
+          k_util: number
+          k_step: number
+          k_wait: number
+          k_env: number
         }
         Insert: {
           created_at?: string
@@ -134,6 +144,16 @@ export type Database = {
           name: string
           peak_extra_price?: number
           updated_at?: string
+          dynamic_enabled?: boolean
+          avg_spend_yen?: number
+          turnover_per_hour?: number
+          target_fastpass_per_hour?: number
+          min_price?: number
+          max_price?: number
+          k_util?: number
+          k_step?: number
+          k_wait?: number
+          k_env?: number
         }
         Update: {
           created_at?: string
@@ -146,6 +166,16 @@ export type Database = {
           name?: string
           peak_extra_price?: number
           updated_at?: string
+          dynamic_enabled?: boolean
+          avg_spend_yen?: number
+          turnover_per_hour?: number
+          target_fastpass_per_hour?: number
+          min_price?: number
+          max_price?: number
+          k_util?: number
+          k_step?: number
+          k_wait?: number
+          k_env?: number
         }
         Relationships: []
       }

@@ -1,10 +1,9 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getFacilityInfo, formatPrice } from "@/lib/pricing";
+import { TicketCard } from "@/components/TicketCard";
 import { CheckCircle, MapPin, Calendar, Users, CreditCard, ArrowRight, Loader2 } from "lucide-react";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
 
@@ -117,58 +116,33 @@ export default function Success() {
         </div>
         
         {/* チケット情報カード */}
-        <Card className="border-2 border-primary/20 bg-card">
-          <CardHeader className="text-center border-b border-border pb-4">
-            <div className="space-y-2">
-              <Badge className="bg-primary text-primary-foreground">
-                購入済み
-              </Badge>
-              <CardTitle className="text-xl">{facilityName}</CardTitle>
-            </div>
-          </CardHeader>
-          
-          <CardContent className="pt-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">施設名</p>
-                <p className="font-medium text-foreground">{facilityName}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">購入日時</p>
-                <p className="font-medium text-foreground">{formattedDate}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">枚数</p>
-                <p className="font-medium text-foreground">{quantity}枚</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <CreditCard className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">支払い金額</p>
-                <p className="font-medium text-foreground text-lg">{formatPrice(totalAmount)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TicketCard
+          title={facilityName}
+          badge="購入済み"
+          badgeVariant="default"
+          items={[
+            {
+              icon: <MapPin className="w-5 h-5 text-accent-foreground" />,
+              label: "施設名",
+              value: facilityName,
+            },
+            {
+              icon: <Calendar className="w-5 h-5 text-accent-foreground" />,
+              label: "購入日時",
+              value: formattedDate,
+            },
+            {
+              icon: <Users className="w-5 h-5 text-accent-foreground" />,
+              label: "枚数",
+              value: `${quantity}枚`,
+            },
+            {
+              icon: <CreditCard className="w-5 h-5 text-accent-foreground" />,
+              label: "支払い金額",
+              value: <span className="text-lg">{formatPrice(totalAmount)}</span>,
+            },
+          ]}
+        />
         
         
         {/* 注意事項 */}

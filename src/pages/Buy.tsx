@@ -189,7 +189,7 @@ export default function Buy() {
             <QuantitySelector
               quantity={quantity} 
               onChange={setQuantity} 
-              maxQuantity={6}
+              maxQuantity={500}
               label={t('buy.selectQuantity')}
             />
             

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { useResendCooldown } from "@/hooks/useResendCooldown";
 import { Mail, ArrowLeft, RefreshCw } from "lucide-react";
 import { z } from "zod";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
@@ -25,7 +26,12 @@ export default function Auth() {
   const [submitting, setSubmitting] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [resending, setResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  
+  // 二重送信防止用ロック
+  const inFlightRef = useRef(false);
+  
+  // クールダウン管理（localStorage永続化対応）
+  const { remaining: resendCooldown, isCoolingDown, startCooldown, handleRateLimitError } = useResendCooldown();
 
   // Preserve facility and quantity params for redirect after auth
   const facilityId = searchParams.get("facility") || "";
@@ -49,18 +55,20 @@ export default function Auth() {
     }
   }, [user, profile, loading, navigate, facilityId, quantity]);
 
-  // クールダウンタイマー
-  useEffect(() => {
-    if (resendCooldown > 0) {
-      const timer = setTimeout(() => {
-        setResendCooldown((prev) => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [resendCooldown]);
+  // レート制限エラーかどうかをチェック
+  const isRateLimitError = (message: string): boolean => {
+    return /after\s+\d+\s+seconds?/i.test(message) || 
+           message.includes("rate limit") ||
+           message.includes("security purposes");
+  };
 
   const handleSendMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 二重送信防止
+    if (inFlightRef.current || submitting || isCoolingDown) return;
+    
+    inFlightRef.current = true;
     setSubmitting(true);
 
     try {
@@ -68,13 +76,24 @@ export default function Auth() {
 
       const { error } = await signInWithOtp(validatedData.email);
       if (error) {
-        toast({
-          title: "送信エラー",
-          description: error.message,
-          variant: "destructive",
-        });
+        // レート制限エラーの場合はクールダウン開始
+        if (isRateLimitError(error.message)) {
+          handleRateLimitError(error.message);
+          toast({
+            title: "しばらくお待ちください",
+            description: `セキュリティのため、再送信まで少々お待ちください`,
+          });
+        } else {
+          toast({
+            title: "送信エラー",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
       } else {
         setEmailSent(true);
+        // 成功時もクールダウン開始
+        startCooldown(60);
         toast({
           title: "認証メールを送信しました",
           description: "メールに記載されたリンクをクリックしてログインしてください",
@@ -90,28 +109,40 @@ export default function Auth() {
       }
     } finally {
       setSubmitting(false);
+      inFlightRef.current = false;
     }
   };
 
   // メール再送機能
   const handleResendEmail = useCallback(async () => {
-    if (resendCooldown > 0 || !email) return;
+    // 二重送信防止 & クールダウン中は送信不可
+    if (inFlightRef.current || resending || isCoolingDown || !email) return;
     
+    inFlightRef.current = true;
     setResending(true);
     try {
       const { error } = await signInWithOtp(email);
       if (error) {
-        toast({
-          title: "再送エラー",
-          description: error.message,
-          variant: "destructive",
-        });
+        // レート制限エラーの場合はクールダウン開始
+        if (isRateLimitError(error.message)) {
+          handleRateLimitError(error.message);
+          toast({
+            title: "しばらくお待ちください",
+            description: `セキュリティのため、再送信まで少々お待ちください`,
+          });
+        } else {
+          toast({
+            title: "再送エラー",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
       } else {
         toast({
           title: "認証メールを再送しました",
           description: "メールに記載されたリンクをクリックしてログインしてください",
         });
-        setResendCooldown(30); // 30秒のクールダウン
+        startCooldown(60); // 成功時60秒のクールダウン
       }
     } catch {
       toast({
@@ -121,8 +152,9 @@ export default function Auth() {
       });
     } finally {
       setResending(false);
+      inFlightRef.current = false;
     }
-  }, [email, resendCooldown, signInWithOtp]);
+  }, [email, isCoolingDown, resending, signInWithOtp, startCooldown, handleRateLimitError]);
 
   const handleGoogleSignIn = async () => {
     const { error } = await signInWithGoogle();
@@ -230,13 +262,13 @@ export default function Auth() {
                   variant="outline"
                   className="w-full gap-2"
                   onClick={handleResendEmail}
-                  disabled={resending || resendCooldown > 0}
+                  disabled={resending || isCoolingDown}
                 >
                   <RefreshCw className={`w-4 h-4 ${resending ? 'animate-spin' : ''}`} />
                   {resending
                     ? "送信中..."
-                    : resendCooldown > 0
-                    ? `再送可能まで ${resendCooldown}秒`
+                    : isCoolingDown
+                    ? `再送まで ${resendCooldown}秒`
                     : "認証メールを再送する"}
                 </Button>
               </div>
@@ -261,8 +293,12 @@ export default function Auth() {
                   </p>
                 </div>
 
-                <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? "送信中..." : "認証メールを送信"}
+                <Button type="submit" className="w-full" disabled={submitting || isCoolingDown}>
+                  {submitting 
+                    ? "送信中..." 
+                    : isCoolingDown
+                    ? `送信まで ${resendCooldown}秒`
+                    : "認証メールを送信"}
                 </Button>
               </form>
             )}

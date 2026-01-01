@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -70,6 +70,22 @@ export default function Buy() {
   const [step, setStep] = useState(1);
   const [quantity, setQuantity] = useState(1);
   const [consents, setConsents] = useState(DEFAULT_CONSENT_ITEMS);
+  
+  // 「トップに戻る」ボタンの表示制御
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 300);
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
   
   const allConsented = consents.every((c) => c.checked);
   
@@ -329,24 +345,31 @@ export default function Buy() {
           </CardContent>
         </Card>
         
-        {/* トップに戻るボタン */}
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="gap-2"
-          >
-            <ArrowUp className="w-4 h-4" />
-            {t('common.backToTop')}
-          </Button>
-        </div>
-        
         {/* フッター */}
         <p className="text-xs text-center text-muted-foreground">
           ©︎ SUGUKURU ALL Rights Reserved.
         </p>
       </div>
+      
+      {/* トップに戻るボタン（固定位置・スクロール時のみ表示） */}
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={scrollToTop}
+        aria-label={t('common.backToTop')}
+        className={`
+          fixed bottom-6 right-6 z-50
+          w-10 h-10 rounded-full shadow-lg
+          bg-background/95 backdrop-blur-sm
+          border border-border
+          transition-all duration-300 ease-in-out
+          ${showBackToTop 
+            ? 'opacity-100 translate-y-0 pointer-events-auto' 
+            : 'opacity-0 translate-y-4 pointer-events-none'}
+        `}
+      >
+        <ArrowUp className="w-5 h-5" />
+      </Button>
     </div>
   );
 }

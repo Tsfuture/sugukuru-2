@@ -1,12 +1,12 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice } from "@/lib/pricing";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { TicketCard } from "@/components/TicketCard";
 import { Smartphone, MapPin, Users, Clock, CreditCard, ArrowLeft, Loader2 } from "lucide-react";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
 
@@ -279,56 +279,33 @@ export default function TempTicket() {
         </Card>
 
         {/* Temp Ticket Card */}
-        <Card className="border-2 border-border">
-          <CardHeader className="text-center border-b border-border pb-4">
-            <Badge variant="secondary" className="w-fit mx-auto mb-2">
-              仮チケット
-            </Badge>
-            <CardTitle className="text-xl">{store.name}</CardTitle>
-          </CardHeader>
-
-          <CardContent className="pt-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">施設名</p>
-                <p className="font-medium text-foreground">{store.name}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">購入枚数</p>
-                <p className="font-medium text-foreground">{quantity}枚</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <Clock className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">購入日時</p>
-                <p className="font-medium text-foreground">{purchaseDate}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-                <CreditCard className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">お支払い金額</p>
-                <p className="font-medium text-foreground text-lg">{formatPrice(displayTotalPrice)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TicketCard
+          title={store.name}
+          badge="仮チケット"
+          badgeVariant="secondary"
+          items={[
+            {
+              icon: <MapPin className="w-5 h-5 text-accent-foreground" />,
+              label: "施設名",
+              value: store.name,
+            },
+            {
+              icon: <Users className="w-5 h-5 text-accent-foreground" />,
+              label: "購入枚数",
+              value: `${quantity}枚`,
+            },
+            {
+              icon: <Clock className="w-5 h-5 text-accent-foreground" />,
+              label: "購入日時",
+              value: purchaseDate,
+            },
+            {
+              icon: <CreditCard className="w-5 h-5 text-accent-foreground" />,
+              label: "お支払い金額",
+              value: <span className="text-lg">{formatPrice(displayTotalPrice)}</span>,
+            },
+          ]}
+        />
 
         {/* Actions */}
         <div className="space-y-3">

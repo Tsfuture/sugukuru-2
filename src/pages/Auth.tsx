@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { Mail, ArrowLeft } from "lucide-react";
+import { Mail, ArrowLeft, RefreshCw } from "lucide-react";
 import { z } from "zod";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
 
@@ -24,6 +24,8 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Preserve facility and quantity params for redirect after auth
   const facilityId = searchParams.get("facility") || "";
@@ -46,6 +48,16 @@ export default function Auth() {
       }
     }
   }, [user, profile, loading, navigate, facilityId, quantity]);
+
+  // クールダウンタイマー
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown((prev) => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   const handleSendMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +92,37 @@ export default function Auth() {
       setSubmitting(false);
     }
   };
+
+  // メール再送機能
+  const handleResendEmail = useCallback(async () => {
+    if (resendCooldown > 0 || !email) return;
+    
+    setResending(true);
+    try {
+      const { error } = await signInWithOtp(email);
+      if (error) {
+        toast({
+          title: "再送エラー",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "認証メールを再送しました",
+          description: "メールに記載されたリンクをクリックしてログインしてください",
+        });
+        setResendCooldown(30); // 30秒のクールダウン
+      }
+    } catch {
+      toast({
+        title: "再送エラー",
+        description: "メールの再送に失敗しました。しばらくしてからお試しください。",
+        variant: "destructive",
+      });
+    } finally {
+      setResending(false);
+    }
+  }, [email, resendCooldown, signInWithOtp]);
 
   const handleGoogleSignIn = async () => {
     const { error } = await signInWithGoogle();
@@ -180,6 +223,21 @@ export default function Auth() {
                   }}
                 >
                   別のメールアドレスを使用する
+                </Button>
+                
+                {/* 再送ボタン */}
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={handleResendEmail}
+                  disabled={resending || resendCooldown > 0}
+                >
+                  <RefreshCw className={`w-4 h-4 ${resending ? 'animate-spin' : ''}`} />
+                  {resending
+                    ? "送信中..."
+                    : resendCooldown > 0
+                    ? `再送可能まで ${resendCooldown}秒`
+                    : "認証メールを再送する"}
                 </Button>
               </div>
             ) : (

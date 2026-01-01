@@ -21,6 +21,28 @@ type StoreRow = {
   is_open: boolean;
 };
 
+// get-price API response type
+interface GetPriceResponse {
+  price_yen: number;
+  breakdown: {
+    base_price: number;
+    util: number;
+    slot_purchases: number;
+    step_effect: number;
+    wait_effect: number;
+    env_effect: number;
+    final_multiplier: number;
+  };
+  store: {
+    id: string;
+    name: string;
+    description: string | null;
+    is_open: boolean;
+  };
+  dynamic_enabled: boolean;
+  slot_id: string;
+}
+
 export default function Buy() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
@@ -34,6 +56,10 @@ export default function Buy() {
   const [store, setStore] = useState<StoreRow | null>(null);
   const [loadingStore, setLoadingStore] = useState(true);
   const [storeError, setStoreError] = useState<string | null>(null);
+  
+  // ダイナミック価格の状態
+  const [dynamicPrice, setDynamicPrice] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
 
   useEffect(() => {
     async function fetchStore() {
@@ -63,8 +89,37 @@ export default function Buy() {
     fetchStore();
   }, [storeId]);
 
-  // 店舗から価格を取得
-  const unitPrice = store?.fastpass_price ?? 0;
+  // get-price APIからダイナミック価格を取得
+  useEffect(() => {
+    async function fetchDynamicPrice() {
+      if (!storeId || !store) return;
+      
+      setPriceLoading(true);
+      try {
+        const response = await supabase.functions.invoke<GetPriceResponse>("get-price", {
+          body: { store_id: storeId },
+        });
+
+        if (response.error) {
+          console.error("get-price error:", response.error);
+          // フォールバック: store.fastpass_price を使用
+          setDynamicPrice(null);
+        } else if (response.data) {
+          setDynamicPrice(response.data.price_yen);
+        }
+      } catch (err) {
+        console.error("get-price fetch error:", err);
+        setDynamicPrice(null);
+      } finally {
+        setPriceLoading(false);
+      }
+    }
+
+    fetchDynamicPrice();
+  }, [storeId, store]);
+
+  // 価格: dynamicPrice があればそれを使用、なければ fastpass_price にフォールバック
+  const unitPrice = dynamicPrice ?? store?.fastpass_price ?? 0;
   
   // ステップ管理
   const [step, setStep] = useState(1);

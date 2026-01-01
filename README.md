@@ -98,7 +98,7 @@ supabase link --project-ref ghetymkklbfvczlvnxfu
 # Stripe Secret Keyを設定
 # ⚠️ 実際のキーは Stripe Dashboard から取得し、直接コマンドに入力してください
 # 絶対にキーをファイルやログに残さないこと！
-supabase secrets set STRIPE_SECRET_KEY=sk_test_XXXXXXXXXXXXXXXX
+supabase secrets set STRIPE_SECRET_KEY=<YOUR_STRIPE_SECRET_KEY>
 
 # Edge Functionをデプロイ
 supabase functions deploy stripe-setup-intent

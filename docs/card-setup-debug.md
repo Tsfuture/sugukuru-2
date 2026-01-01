@@ -11,7 +11,7 @@
 
 ```bash
 # Supabase プロジェクトに Secret を設定
-supabase secrets set STRIPE_SECRET_KEY=sk_test_xxx --project-ref ghetymkklbfvczlvnxfu
+supabase secrets set STRIPE_SECRET_KEY=<YOUR_STRIPE_SECRET_KEY> --project-ref ghetymkklbfvczlvnxfu
 ```
 
 > ⚠️ `SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` は Supabase が自動で提供します。

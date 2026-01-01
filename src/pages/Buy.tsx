@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StepIndicator, CHECKOUT_STEPS } from "@/components/StepIndicator";
@@ -7,7 +8,6 @@ import { QuantitySelector } from "@/components/QuantitySelector";
 import { PriceDisplay } from "@/components/PriceDisplay";
 import { ConsentCheckbox, DEFAULT_CONSENT_ITEMS } from "@/components/ConsentCheckbox";
 import { formatPrice } from "@/lib/pricing";
-import { calcEstimatedWaitTime, formatWaitTime } from "@/lib/waitTime";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, ArrowRight, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
@@ -18,11 +18,11 @@ type StoreRow = {
   name: string;
   description: string | null;
   fastpass_price: number;
-  current_wait_time: number;
   is_open: boolean;
 };
 
 export default function Buy() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
@@ -46,7 +46,7 @@ export default function Buy() {
 
       const { data, error } = await supabase
         .from("stores")
-        .select("id,name,description,fastpass_price,current_wait_time,is_open")
+        .select("id,name,description,fastpass_price,is_open")
         .eq("id", storeId)
         .single();
 
@@ -72,9 +72,6 @@ export default function Buy() {
   const [consents, setConsents] = useState(DEFAULT_CONSENT_ITEMS);
   
   const allConsented = consents.every((c) => c.checked);
-
-  // 待ち時間計算
-  const waitTime = calcEstimatedWaitTime(storeId || "default", quantity);
   
   const handleConsentChange = (id: string, checked: boolean) => {
     setConsents((prev) =>
@@ -122,7 +119,7 @@ export default function Buy() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
-          <p className="text-muted-foreground">店舗情報を読み込み中...</p>
+          <p className="text-muted-foreground">{t('buy.loadingStore')}</p>
         </div>
       </div>
     );
@@ -139,14 +136,14 @@ export default function Buy() {
           <Card className="border-destructive/50">
             <CardContent className="pt-6 text-center space-y-4">
               <AlertTriangle className="w-12 h-12 text-destructive mx-auto" />
-              <h2 className="text-lg font-bold">店舗が選択されていません</h2>
+              <h2 className="text-lg font-bold">{t('buy.noStoreSelected')}</h2>
               <p className="text-sm text-muted-foreground">
-                QRコードをスキャンするか、店舗一覧から選択してください。
+                {t('buy.noStoreDesc')}
               </p>
               <Button asChild>
                 <Link to="/">
                   <Home className="w-4 h-4 mr-2" />
-                  トップに戻る
+                  {t('common.topPage')}
                 </Link>
               </Button>
             </CardContent>
@@ -167,14 +164,14 @@ export default function Buy() {
           <Card className="border-destructive/50">
             <CardContent className="pt-6 text-center space-y-4">
               <AlertTriangle className="w-12 h-12 text-destructive mx-auto" />
-              <h2 className="text-lg font-bold">店舗が見つかりません</h2>
+              <h2 className="text-lg font-bold">{t('buy.storeNotFound')}</h2>
               <p className="text-sm text-muted-foreground">
-                {storeError || "指定されたIDの店舗が存在しません。URLをご確認ください。"}
+                {storeError || t('buy.storeNotFoundDesc')}
               </p>
               <Button asChild>
                 <Link to="/">
                   <Home className="w-4 h-4 mr-2" />
-                  トップに戻る
+                  {t('common.topPage')}
                 </Link>
               </Button>
             </CardContent>
@@ -193,13 +190,13 @@ export default function Buy() {
               quantity={quantity} 
               onChange={setQuantity} 
               maxQuantity={6}
-              label="購入枚数を選択"
+              label={t('buy.selectQuantity')}
             />
             
             {/* 利用人数制限の注意書き */}
             <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg p-3">
               <AlertTriangle className="w-4 h-4" />
-              <span>SUGUKURUご利用人数は1組6名様までです。</span>
+              <span>{t('buy.quantityLimit')}</span>
             </div>
 
             <PriceDisplay unitPrice={unitPrice} quantity={quantity} />
@@ -213,7 +210,7 @@ export default function Buy() {
             {!allConsented && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg p-3">
                 <AlertTriangle className="w-4 h-4" />
-                <span>すべての項目に同意してください</span>
+                <span>{t('buy.pleaseAgree')}</span>
               </div>
             )}
           </div>
@@ -223,19 +220,19 @@ export default function Buy() {
         return (
           <div className="space-y-6">
             <div className="bg-accent/30 rounded-lg p-4 space-y-3">
-              <h3 className="font-medium text-foreground">購入内容の確認</h3>
+              <h3 className="font-medium text-foreground">{t('buy.confirmOrder')}</h3>
               
               <div className="flex items-center gap-2 text-sm">
                 <MapPin className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">店舗:</span>
+                <span className="text-muted-foreground">{t('buy.store')}:</span>
                 <span className="font-medium text-foreground">{store.name}</span>
               </div>
               
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">購入日時:</span>
+                <span className="text-muted-foreground">{t('buy.purchaseDate')}:</span>
                 <span className="font-medium text-foreground">
-                  {new Date().toLocaleString("ja-JP")}
+                  {new Date().toLocaleString()}
                 </span>
               </div>
             </div>
@@ -243,7 +240,7 @@ export default function Buy() {
             <PriceDisplay unitPrice={unitPrice} quantity={quantity} showPeakBadge={false} />
             
             <p className="text-xs text-muted-foreground text-center">
-              「チケットを確保する」をクリックすると、仮チケット画面に移動します
+              {t('buy.ticketNote')}
             </p>
           </div>
         );
@@ -259,7 +256,7 @@ export default function Buy() {
         {/* ヘッダー */}
         <div className="text-center space-y-2">
           <img src={sugukuruLogo} alt="SUGUKURU" className="h-10 mx-auto" />
-          <p className="text-sm text-muted-foreground">FastPass購入</p>
+          <p className="text-sm text-muted-foreground">{t('buy.fastPassPurchase')}</p>
         </div>
         
         {/* 店舗情報カード */}
@@ -269,7 +266,7 @@ export default function Buy() {
               <MapPin className="w-5 h-5 text-primary" />
               <CardTitle className="text-lg">{store.name}</CardTitle>
             </div>
-            <CardDescription>{store.description || "FastPass対応店舗"}</CardDescription>
+            <CardDescription>{store.description || t('stores.defaultDesc')}</CardDescription>
           </CardHeader>
         </Card>
         
@@ -291,7 +288,7 @@ export default function Buy() {
                   className="flex-1"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
-                  戻る
+                  {t('common.back')}
                 </Button>
               )}
               
@@ -301,7 +298,7 @@ export default function Buy() {
                   disabled={step === 2 && !allConsented}
                   className="flex-1"
                 >
-                  次へ
+                  {t('common.next')}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               ) : (
@@ -311,7 +308,7 @@ export default function Buy() {
                   disabled={authLoading}
                 >
                   <Ticket className="w-4 h-4 mr-2" />
-                  {authLoading ? "読み込み中..." : "チケットを確保する"}
+                  {authLoading ? t('common.loading') : t('buy.secureTicket')}
                 </Button>
               )}
             </div>
@@ -334,7 +331,7 @@ export default function Buy() {
         
         {/* フッター */}
         <p className="text-xs text-center text-muted-foreground">
-          © SUGUKURU - スグクル
+          ©︎ SUGUKURU ALL Rights Reserved.
         </p>
       </div>
     </div>

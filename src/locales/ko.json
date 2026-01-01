@@ -1,0 +1,127 @@
+{
+  "common": {
+    "loading": "로딩 중...",
+    "back": "뒤로",
+    "next": "다음",
+    "confirm": "확인",
+    "cancel": "취소",
+    "purchase": "구매",
+    "topPage": "처음으로",
+    "language": "언어"
+  },
+  "header": {
+    "scanQR": "QR 코드를 스캔하세요",
+    "scanDescription": "매장의 QR 코드를 스캔하여 FastPass 구매 페이지를 여세요",
+    "peakTime": "현재 피크 시간대 (18:00-21:00)"
+  },
+  "howTo": {
+    "title": "사용법은 간단합니다",
+    "step1Title": "1. QR 코드 스캔",
+    "step1Desc": "스마트폰으로 매장의 QR 코드를 스캔하여 구매 페이지를 열기",
+    "step2Title": "2. FastPass 구매",
+    "step2Desc": "신용카드로 결제. 앱 필요 없이 브라우저에서 완료",
+    "step3Title": "3. 우선 안내 받기",
+    "step3Desc": "티켓 화면을 직원에게 보여주고 대기 없이 입장"
+  },
+  "stores": {
+    "title": "제휴 매장",
+    "description": "아래 링크에서 구매 과정을 체험해 보세요",
+    "closed": "영업 시간 외",
+    "defaultDesc": "FastPass 지원 매장",
+    "buyFastPass": "FastPass 구매",
+    "priceFrom": "~"
+  },
+  "buy": {
+    "loadingStore": "매장 정보 로딩 중...",
+    "noStoreSelected": "매장이 선택되지 않았습니다",
+    "noStoreDesc": "QR 코드를 스캔하거나 매장 목록에서 선택하세요.",
+    "storeNotFound": "매장을 찾을 수 없습니다",
+    "storeNotFoundDesc": "지정된 매장 ID가 존재하지 않습니다. URL을 확인해 주세요.",
+    "selectQuantity": "수량 선택",
+    "quantityLimit": "SUGUKURU는 1그룹 최대 6명까지 이용 가능합니다.",
+    "unitPrice": "단가",
+    "subtotal": "소계",
+    "total": "합계",
+    "confirmConsent": "동의 확인",
+    "pleaseAgree": "위의 모든 항목에 체크하여 동의해 주세요",
+    "purchase": "구매 진행",
+    "fastPassPurchase": "FastPass 구매",
+    "confirmOrder": "주문 확인",
+    "store": "매장",
+    "purchaseDate": "구매 날짜",
+    "ticketNote": "\" ud2f0켓 확보\"를 클릭하면 임시 티켓 화면으로 이동합니다",
+    "secureTicket": "티켓 확보",
+    "tickets": "장",
+    "persons": "명"
+  },
+  "mypage": {
+    "title": "마이페이지",
+    "user": "사용자",
+    "registeredCard": "등록된 카드",
+    "card": "카드",
+    "changeCard": "카드 정보 변경",
+    "noCard": "등록된 카드가 없습니다.",
+    "registerCard": "카드 등록",
+    "signOut": "로그아웃",
+    "expiry": "만료일"
+  },
+  "auth": {
+    "title": "로그인 / 회원가입",
+    "emailPlaceholder": "이메일 주소",
+    "sendLink": "로그인 링크 보내기",
+    "checkEmail": "이메일을 확인하세요",
+    "linkSent": "로그인 링크를 이메일로 보냈습니다",
+    "orContinueWith": "또는 계속하기"
+  },
+  "cardSetup": {
+    "title": "카드 등록",
+    "registerNewCard": "새 카드 등록",
+    "registering": "등록 중...",
+    "register": "등록"
+  },
+  "tempTicket": {
+    "title": "구매 확인",
+    "confirmPurchase": "이 구매를 확인하시겠습니까?",
+    "processing": "처리 중...",
+    "confirmAndPay": "확인 및 결제"
+  },
+  "success": {
+    "title": "구매 완료",
+    "thankYou": "구매해 주셔서 감사합니다",
+    "ticketReady": "티켓이 발행되었습니다",
+    "showToStaff": "이 화면을 직원에게 보여주세요"
+  },
+  "tokusho": {
+    "title": "특정상거래법 표기"
+  },
+  "footer": {
+    "tagline": "앱 필요 없음 - 브라우저 기반 - QR 코드로 간편 구매",
+    "tokushoLink": "특정상거래법 표기"
+  },
+  "consent": {
+    "noRefund": "취소 및 환불은 불가합니다",
+    "validToday": "티켓은 당일만 유효합니다",
+    "showTicket": "입장 시 티켓 화면을 직원에게 보여주세요"
+  },
+  "contact": {
+    "title": "문의하기",
+    "description": "질문이나 의견이 있으시면 편하게 문의해 주세요",
+    "email": "이메일 주소",
+    "emailPlaceholder": "your-email@example.com",
+    "category": "카테고리",
+    "categoryPlaceholder": "선택 (선택사항)",
+    "subject": "제목",
+    "subjectPlaceholder": "제목을 입력하세요 (선택사항, 80자 이내)",
+    "body": "메시지",
+    "bodyPlaceholder": "메시지를 입력하세요 (2000자 이내)",
+    "submit": "보내기",
+    "note": "보내기 버튼을 누르면 이메일 앱이 열립니다",
+    "errors": {
+      "emailRequired": "이메일 주소를 입력해 주세요",
+      "emailInvalid": "올바른 이메일 주소를 입력해 주세요",
+      "subjectTooLong": "제목은 80자 이내로 입력해 주세요",
+      "bodyRequired": "메시지를 입력해 주세요",
+      "bodyTooLong": "메시지는 2000자 이내로 입력해 주세요"
+    }
+  }
+}

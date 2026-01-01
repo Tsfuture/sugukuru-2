@@ -2,13 +2,24 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+// 環境変数の検証
+export function validateSupabaseEnv(): { valid: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (!SUPABASE_URL) missing.push('VITE_SUPABASE_URL');
+  if (!SUPABASE_ANON_KEY) missing.push('VITE_SUPABASE_ANON_KEY');
+  return { valid: missing.length === 0, missing };
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+export const supabase = createClient<Database>(
+  SUPABASE_URL || '',
+  SUPABASE_ANON_KEY || '',
+  {
   auth: {
     storage: localStorage,
     persistSession: true,

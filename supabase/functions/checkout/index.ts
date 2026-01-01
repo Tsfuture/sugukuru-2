@@ -1,31 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// 価格テーブル（src/lib/pricing.ts と同期）
-const PRICING_TABLE: Record<string, { name: string; base: number; peakExtra: number }> = {
-  default: { name: "デフォルト店舗", base: 1000, peakExtra: 0 },
-  "store-a": { name: "レストランA", base: 1200, peakExtra: 300 },
-  "store-b": { name: "クリニックB", base: 1500, peakExtra: 500 },
-  "theme-park": { name: "テーマパークC", base: 2000, peakExtra: 800 },
-};
-
+// ピーク時間帯の判定（18:00〜21:00 JST）
 function isPeakTime(): boolean {
-  const hour = new Date().getHours();
-  return hour >= 18 && hour < 21;
-}
-
-function calcDynamicPrice(facilityId: string): number {
-  const config = PRICING_TABLE[facilityId] || PRICING_TABLE.default;
-  let price = config.base;
-  if (isPeakTime()) {
-    price += config.peakExtra;
-  }
-  return price;
+  const now = new Date();
+  const jstHour = (now.getUTCHours() + 9) % 24;
+  return jstHour >= 18 && jstHour < 21;
 }
 
 serve(async (req) => {
@@ -40,19 +26,55 @@ serve(async (req) => {
     console.log(`Checkout request: facilityId=${facilityId}, quantity=${quantity}`);
 
     // バリデーション
-    if (!facilityId || !quantity || quantity < 1) {
+    if (!facilityId || !quantity || quantity < 1 || quantity > 6) {
       return new Response(
         JSON.stringify({ error: "Invalid parameters" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 価格計算
-    const unitPrice = calcDynamicPrice(facilityId);
-    const totalAmount = unitPrice * quantity;
-    const facilityConfig = PRICING_TABLE[facilityId] || PRICING_TABLE.default;
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log(`Price calculated: unitPrice=${unitPrice}, total=${totalAmount}`);
+    // ★ DBから店舗情報・価格を取得（ハードコード価格は使用しない）
+    const { data: store, error: storeError } = await supabase
+      .from("stores")
+      .select("id, name, fastpass_price, peak_extra_price, is_open")
+      .eq("id", facilityId)
+      .single();
+
+    if (storeError || !store) {
+      console.error("Store not found:", storeError);
+      return new Response(
+        JSON.stringify({ error: `施設が見つかりません: ${facilityId}` }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!store.is_open) {
+      return new Response(
+        JSON.stringify({ error: "この施設は現在営業していません" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (store.fastpass_price === null || store.fastpass_price === undefined) {
+      return new Response(
+        JSON.stringify({ error: "施設の価格が設定されていません" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ★ サーバー側で価格計算（DBの値のみ使用）
+    const basePrice = store.fastpass_price;
+    const peak = isPeakTime();
+    const dynamicFee = peak ? (store.peak_extra_price || 0) : 0;
+    const unitPrice = basePrice + dynamicFee;
+    const totalAmount = unitPrice * quantity;
+
+    console.log(`[SECURITY] Price from DB: store=${store.name}, base=${basePrice}, dynamicFee=${dynamicFee}, unit=${unitPrice}, total=${totalAmount}`);
 
     // Stripe初期化
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -81,7 +103,7 @@ serve(async (req) => {
           price_data: {
             currency: "jpy",
             product_data: {
-              name: `${facilityConfig.name} - 優先案内チケット`,
+              name: `${store.name} - 優先案内チケット`,
               description: `${quantity}名様分の優先案内チケット`,
             },
             unit_amount: unitPrice,
@@ -94,9 +116,12 @@ serve(async (req) => {
       cancel_url: cancelUrl,
       metadata: {
         facilityId,
+        facilityName: store.name,
         quantity: String(quantity),
         unitPrice: String(unitPrice),
+        dynamicFee: String(dynamicFee),
         totalAmount: String(totalAmount),
+        basePrice: String(basePrice),
       },
     });
 

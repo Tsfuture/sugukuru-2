@@ -1,0 +1,127 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "back": "Back",
+    "next": "Next",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "purchase": "Purchase",
+    "topPage": "Back to Top",
+    "language": "Language"
+  },
+  "header": {
+    "scanQR": "Scan the QR Code",
+    "scanDescription": "Scan the QR code at the store to open the FastPass purchase page",
+    "peakTime": "Currently Peak Hours (18:00-21:00)"
+  },
+  "howTo": {
+    "title": "Easy to Use",
+    "step1Title": "1. Scan the QR Code",
+    "step1Desc": "Scan the store's QR code with your smartphone to open the purchase page",
+    "step2Title": "2. Buy a FastPass",
+    "step2Desc": "Pay by credit card. No app needed, everything in your browser",
+    "step3Title": "3. Get Priority Access",
+    "step3Desc": "Show the ticket screen to staff and skip the wait"
+  },
+  "stores": {
+    "title": "Partner Stores",
+    "description": "Try the purchase flow from the links below",
+    "closed": "Closed",
+    "defaultDesc": "FastPass enabled store",
+    "buyFastPass": "Buy FastPass",
+    "priceFrom": "~"
+  },
+  "buy": {
+    "loadingStore": "Loading store information...",
+    "noStoreSelected": "No store selected",
+    "noStoreDesc": "Please scan a QR code or select from the store list.",
+    "storeNotFound": "Store not found",
+    "storeNotFoundDesc": "The specified store ID does not exist. Please check the URL.",
+    "selectQuantity": "Select Quantity",
+    "quantityLimit": "SUGUKURU is limited to 6 people per group.",
+    "unitPrice": "Unit Price",
+    "subtotal": "Subtotal",
+    "total": "Total",
+    "confirmConsent": "Consent Confirmation",
+    "pleaseAgree": "Please check all boxes above to agree",
+    "purchase": "Proceed to Purchase",
+    "fastPassPurchase": "Buy FastPass",
+    "confirmOrder": "Order Confirmation",
+    "store": "Store",
+    "purchaseDate": "Purchase Date",
+    "ticketNote": "Click \"Secure Ticket\" to proceed to the temporary ticket screen",
+    "secureTicket": "Secure Ticket",
+    "tickets": "tickets",
+    "persons": "persons"
+  },
+  "mypage": {
+    "title": "My Page",
+    "user": "User",
+    "registeredCard": "Registered Card",
+    "card": "Card",
+    "changeCard": "Change Card Info",
+    "noCard": "No card registered.",
+    "registerCard": "Register Card",
+    "signOut": "Sign Out",
+    "expiry": "Expiry"
+  },
+  "auth": {
+    "title": "Login / Sign Up",
+    "emailPlaceholder": "Email address",
+    "sendLink": "Send Login Link",
+    "checkEmail": "Check your email",
+    "linkSent": "We sent a login link to your email",
+    "orContinueWith": "Or continue with"
+  },
+  "cardSetup": {
+    "title": "Card Registration",
+    "registerNewCard": "Register a new card",
+    "registering": "Registering...",
+    "register": "Register"
+  },
+  "tempTicket": {
+    "title": "Purchase Confirmation",
+    "confirmPurchase": "Confirm this purchase?",
+    "processing": "Processing...",
+    "confirmAndPay": "Confirm & Pay"
+  },
+  "success": {
+    "title": "Purchase Complete",
+    "thankYou": "Thank you for your purchase",
+    "ticketReady": "Your ticket has been issued",
+    "showToStaff": "Please show this screen to the staff"
+  },
+  "tokusho": {
+    "title": "Legal Notice (Tokusho)"
+  },
+  "footer": {
+    "tagline": "No app needed - Browser-based - Easy QR code purchase",
+    "tokushoLink": "Legal Notice"
+  },
+  "consent": {
+    "noRefund": "No cancellations or refunds accepted",
+    "validToday": "Ticket is valid for today only",
+    "showTicket": "Please show the ticket screen to staff upon entry"
+  },
+  "contact": {
+    "title": "Contact Us",
+    "description": "Feel free to contact us with questions or feedback",
+    "email": "Email Address",
+    "emailPlaceholder": "your-email@example.com",
+    "category": "Category",
+    "categoryPlaceholder": "Select (optional)",
+    "subject": "Subject",
+    "subjectPlaceholder": "Enter subject (optional, max 80 chars)",
+    "body": "Message",
+    "bodyPlaceholder": "Enter your message (max 2000 chars)",
+    "submit": "Send",
+    "note": "Clicking send will open your email app",
+    "errors": {
+      "emailRequired": "Email address is required",
+      "emailInvalid": "Please enter a valid email address",
+      "subjectTooLong": "Subject must be 80 characters or less",
+      "bodyRequired": "Message is required",
+      "bodyTooLong": "Message must be 2000 characters or less"
+    }
+  }
+}

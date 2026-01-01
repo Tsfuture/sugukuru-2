@@ -71,3 +71,88 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## 環境変数の設定
+
+### フロントエンド（Vite）
+
+`.env.local` ファイルをプロジェクトルートに作成し、以下を設定してください：
+
+```env
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_51SZqNfHvQRtWRDceYXjVBB0KxqyNMZqDY8PhsT8IXnRPljJriaBBOgIHjDoaAchSsVzBQonAV9PmgH9813Pwjydk00iI81H3nv
+VITE_SUPABASE_URL=https://ghetymkklbfvczlvnxfu.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZXR5bWtrbGJmdmN6bHZueGZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzA0MTEsImV4cCI6MjA4MDc0NjQxMX0.ApMT9psLxagTZpb9Xd5Oz7mg5XV_SnQvSrNC4BZwY34
+```
+
+### バックエンド（Supabase Edge Functions）
+
+Supabase Edge Functionsに秘密鍵を設定するには、以下のコマンドを実行してください：
+
+```bash
+# Supabase CLIでログイン
+supabase login
+
+# プロジェクトをリンク
+supabase link --project-ref ghetymkklbfvczlvnxfu
+
+# Stripe Secret Keyを設定
+# ⚠️ 実際のキーは Stripe Dashboard から取得し、直接コマンドに入力してください
+# 絶対にキーをファイルやログに残さないこと！
+supabase secrets set STRIPE_SECRET_KEY=sk_test_XXXXXXXXXXXXXXXX
+
+# Edge Functionをデプロイ
+supabase functions deploy stripe-setup-intent
+supabase functions deploy setup-card
+supabase functions deploy process-payment
+```
+
+## テスト方法（Stripe決済価格の確認）
+
+`process-payment` Edge Function が DB の `stores.fastpass_price` を正しく使用しているかテストする方法：
+
+### 1. DBで店舗の価格を確認・設定
+
+```sql
+-- 価格を確認
+SELECT id, name, fastpass_price, peak_extra_price, is_open FROM stores;
+
+-- 500円に設定する例
+UPDATE stores SET fastpass_price = 500 WHERE id = 'your-store-id';
+```
+
+### 2. 購入テスト実行
+
+1. UIで `fastpass_price = 500` の店舗を選択
+2. `quantity = 1` で購入
+3. Supabase Edge Function のログを確認：
+
+```bash
+supabase functions logs process-payment --project-ref ghetymkklbfvczlvnxfu
+```
+
+### 3. ログ出力例（期待される結果）
+
+```
+Price calculation {"base":500,"extra":0,"unitPrice":500,"quantity":1,"total":500}
+[SECURITY] Price from DB - store: テスト店舗, basePrice: 500, dynamicFee: 0, unitPrice: 500, quantity: 1, totalAmount: 500
+Creating PaymentIntent for 500 JPY
+PaymentIntent created: pi_xxx, status: succeeded
+```
+
+### 4. Stripe Dashboard で確認
+
+Stripe Dashboard > Payments で `amount = ¥500` になっていることを確認
+
+### ピーク時間帯のテスト（18:00〜21:00 JST）
+
+ピーク時間帯は `peak_extra_price` が加算されます：
+
+```
+Price calculation {"base":500,"extra":100,"unitPrice":600,"quantity":1,"total":600}
+```
+
+### セキュリティ注意事項
+
+- `STRIPE_SECRET_KEY` は **絶対にフロントエンドに置かない**
+- `STRIPE_SECRET_KEY` を **ログに出力しない**
+- `.env.local` は **Gitにコミットしない**（.gitignoreで除外済み）

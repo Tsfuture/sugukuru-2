@@ -345,6 +345,16 @@ export default function Buy() {
           </CardContent>
         </Card>
         
+        {/* トップページへ戻るボタン */}
+        <div className="flex justify-center">
+          <Button variant="outline" asChild className="w-full">
+            <Link to="/" onClick={() => window.scrollTo(0, 0)}>
+              <Home className="w-4 h-4 mr-2" />
+              {t('common.topPage')}
+            </Link>
+          </Button>
+        </div>
+        
         {/* フッター */}
         <p className="text-xs text-center text-muted-foreground">
           ©︎ SUGUKURU ALL Rights Reserved.

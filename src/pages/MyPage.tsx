@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +21,7 @@ function getCardBrandDisplay(brand: string | null): string {
 }
 
 export default function MyPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { user, profile, loading, signOut } = useAuth();
 
@@ -67,7 +69,7 @@ export default function MyPage() {
 
       {/* メインコンテンツ */}
       <main className="max-w-md mx-auto px-4 py-6 space-y-6">
-        <h1 className="text-2xl font-bold text-foreground">マイページ</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('mypage.title')}</h1>
 
         {/* ユーザー情報 */}
         <Card>
@@ -77,7 +79,7 @@ export default function MyPage() {
                 <User className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-lg">{profile?.name || "ユーザー"}</CardTitle>
+                <CardTitle className="text-lg">{profile?.name || t('mypage.user')}</CardTitle>
                 <CardDescription>{user.email}</CardDescription>
               </div>
             </div>
@@ -89,7 +91,7 @@ export default function MyPage() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-primary" />
-              登録済みカード
+              {t('mypage.registeredCard')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -97,13 +99,13 @@ export default function MyPage() {
               <>
                 <div className="bg-accent/50 rounded-lg p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">カード</span>
+                    <span className="text-sm text-muted-foreground">{t('mypage.card')}</span>
                     <span className="font-medium text-foreground">
                       {getCardBrandDisplay(profile.card_brand)} •••• {profile.card_last4}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">有効期限</span>
+                    <span className="text-sm text-muted-foreground">{t('mypage.expiry')}</span>
                     <span className="font-medium text-foreground">
                       {profile.card_exp_month?.toString().padStart(2, "0")}/{profile.card_exp_year}
                     </span>
@@ -115,17 +117,17 @@ export default function MyPage() {
                   onClick={handleChangeCard}
                 >
                   <Pencil className="w-4 h-4 mr-2" />
-                  カード情報を変更する
+                  {t('mypage.changeCard')}
                 </Button>
               </>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  カード情報が登録されていません。
+                  {t('mypage.noCard')}
                 </p>
                 <Button className="w-full" onClick={handleChangeCard}>
                   <CreditCard className="w-4 h-4 mr-2" />
-                  カードを登録する
+                  {t('mypage.registerCard')}
                 </Button>
               </>
             )}
@@ -139,7 +141,7 @@ export default function MyPage() {
           onClick={handleSignOut}
         >
           <LogOut className="w-4 h-4 mr-2" />
-          ログアウト
+          {t('mypage.signOut')}
         </Button>
       </main>
 
@@ -147,7 +149,7 @@ export default function MyPage() {
       <footer className="py-8 px-4">
         <div className="max-w-md mx-auto text-center">
           <Link to="/tokusho" className="text-xs text-muted-foreground hover:text-foreground underline">
-            特定商取引法に基づく表記
+            {t('footer.tokushoLink')}
           </Link>
         </div>
       </footer>

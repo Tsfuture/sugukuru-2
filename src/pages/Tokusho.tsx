@@ -136,7 +136,7 @@ export default function Tokusho() {
         <div className="max-w-4xl mx-auto text-center space-y-4">
           <img src={sugukuruLogo} alt="SUGUKURU" className="h-8 mx-auto opacity-50" />
           <p className="text-sm text-muted-foreground">
-            © 2024 SUGUKURU - 行列スキップサービス
+            ©︎ SUGUKURU ALL Rights Reserved.
           </p>
         </div>
       </footer>

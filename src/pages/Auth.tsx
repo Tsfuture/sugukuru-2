@@ -1,38 +1,29 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { Mail, Eye, EyeOff, User } from "lucide-react";
+import { Mail, ArrowLeft } from "lucide-react";
 import { z } from "zod";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
 
-const signUpSchema = z.object({
-  name: z.string().min(1, "名前を入力してください").max(100, "名前は100文字以内で入力してください"),
+const emailSchema = z.object({
   email: z.string().email("有効なメールアドレスを入力してください"),
-  password: z.string().min(6, "パスワードは6文字以上で入力してください"),
-});
-
-const signInSchema = z.object({
-  email: z.string().email("有効なメールアドレスを入力してください"),
-  password: z.string().min(1, "パスワードを入力してください"),
 });
 
 export default function Auth() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, profile, loading, signUp, signIn, signInWithGoogle } = useAuth();
+  const { t } = useTranslation();
+  const { user, profile, loading, signInWithOtp, signInWithGoogle } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"signup" | "signin">("signup");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   // Preserve facility and quantity params for redirect after auth
   const facilityId = searchParams.get("facility") || "";
@@ -48,75 +39,35 @@ export default function Auth() {
   // Redirect logged-in users based on their payment method status
   useEffect(() => {
     if (!loading && user && profile) {
-      // If user has payment method, go to buy page
       if (profile.has_payment_method) {
         navigate(`/buy${buildRedirectParams()}`);
       } else {
-        // Otherwise, go to card setup
         navigate(`/card-setup${buildRedirectParams()}`);
       }
     }
   }, [user, profile, loading, navigate, facilityId, quantity]);
 
-  const handleSignUp = async (e: React.FormEvent) => {
+  const handleSendMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
-      const validatedData = signUpSchema.parse({ name, email, password });
+      const validatedData = emailSchema.parse({ email });
 
-      const { error } = await signUp(validatedData.email, validatedData.password, validatedData.name);
+      const { error } = await signInWithOtp(validatedData.email);
       if (error) {
-        if (error.message.includes("already registered")) {
-          toast({
-            title: "登録済みのアカウント",
-            description: "このメールアドレスは既に登録されています。ログインしてください。",
-            variant: "destructive",
-          });
-          setActiveTab("signin");
-        } else {
-          toast({
-            title: "登録エラー",
-            description: error.message,
-            variant: "destructive",
-          });
-        }
+        toast({
+          title: "送信エラー",
+          description: error.message,
+          variant: "destructive",
+        });
       } else {
+        setEmailSent(true);
         toast({
-          title: "アカウント作成成功",
-          description: "カード登録画面に移動します",
-        });
-        // Auth state change will trigger redirect
-      }
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        toast({
-          title: "入力エラー",
-          description: err.errors[0].message,
-          variant: "destructive",
+          title: "認証メールを送信しました",
+          description: "メールに記載されたリンクをクリックしてログインしてください",
         });
       }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    try {
-      const validatedData = signInSchema.parse({ email, password });
-
-      const { error } = await signIn(validatedData.email, validatedData.password);
-      if (error) {
-        toast({
-          title: "ログインエラー",
-          description: "メールアドレスまたはパスワードが正しくありません",
-          variant: "destructive",
-        });
-      }
-      // Auth state change will trigger redirect
     } catch (err) {
       if (err instanceof z.ZodError) {
         toast({
@@ -164,13 +115,8 @@ export default function Auth() {
         </div>
 
         <Card>
-          <CardHeader className="pb-4">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "signup" | "signin")}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="signup">新規登録</TabsTrigger>
-                <TabsTrigger value="signin">ログイン</TabsTrigger>
-              </TabsList>
-            </Tabs>
+          <CardHeader className="pb-4 text-center">
+            <h2 className="text-lg font-semibold">ログイン / 新規登録</h2>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Google Sign In */}
@@ -198,7 +144,7 @@ export default function Auth() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              Googleで{activeTab === "signup" ? "登録" : "ログイン"}
+              Googleでログイン
             </Button>
 
             <div className="relative">
@@ -210,78 +156,40 @@ export default function Auth() {
               </div>
             </div>
 
-            {/* Sign Up Form */}
-            {activeTab === "signup" && (
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">お名前</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="name"
-                      type="text"
-                      placeholder="山田 太郎"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
+            {/* Magic Link Form */}
+            {emailSent ? (
+              <div className="text-center py-4 space-y-4">
+                <div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center">
+                  <Mail className="w-8 h-8 text-green-600" />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email-signup">メールアドレス</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="email-signup"
-                      type="email"
-                      placeholder="email@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
+                <div>
+                  <p className="font-medium text-foreground">メールを送信しました</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {email} に認証リンクを送信しました。
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    メールに記載されたリンクをクリックしてください。
+                  </p>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password-signup">パスワード</Label>
-                  <div className="relative">
-                    <Input
-                      id="password-signup"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="6文字以上"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-10"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? "処理中..." : "アカウント登録"}
+                <Button
+                  variant="ghost"
+                  className="text-sm"
+                  onClick={() => {
+                    setEmailSent(false);
+                    setEmail("");
+                  }}
+                >
+                  別のメールアドレスを使用する
                 </Button>
-              </form>
-            )}
-
-            {/* Sign In Form */}
-            {activeTab === "signin" && (
-              <form onSubmit={handleSignIn} className="space-y-4">
+              </div>
+            ) : (
+              <form onSubmit={handleSendMagicLink} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email-signin">メールアドレス</Label>
+                  <Label htmlFor="email">メールアドレス</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
-                      id="email-signin"
+                      id="email"
                       type="email"
                       placeholder="email@example.com"
                       value={email}
@@ -290,40 +198,31 @@ export default function Auth() {
                       required
                     />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password-signin">パスワード</Label>
-                  <div className="relative">
-                    <Input
-                      id="password-signin"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="パスワード"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-10"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    入力したアドレスに認証リンクが送信されます
+                  </p>
                 </div>
 
                 <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? "処理中..." : "ログイン"}
+                  {submitting ? "送信中..." : "認証メールを送信"}
                 </Button>
               </form>
             )}
           </CardContent>
         </Card>
 
+        {/* Back to Top Link */}
+        <div className="text-center">
+          <Button variant="ghost" asChild className="text-muted-foreground">
+            <Link to="/">
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              {t("common.topPage")}
+            </Link>
+          </Button>
+        </div>
+
         <p className="text-xs text-center text-muted-foreground">
-          © SUGUKURU - スグクル
+          ©︎ SUGUKURU ALL Rights Reserved.
         </p>
       </div>
     </div>

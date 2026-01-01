@@ -1,0 +1,127 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "back": "Retour",
+    "next": "Suivant",
+    "confirm": "Confirmer",
+    "cancel": "Annuler",
+    "purchase": "Acheter",
+    "topPage": "Retour à l'accueil",
+    "language": "Langue"
+  },
+  "header": {
+    "scanQR": "Scannez le code QR",
+    "scanDescription": "Scannez le code QR au magasin pour ouvrir la page d'achat FastPass",
+    "peakTime": "Heures de pointe actuelles (18:00-21:00)"
+  },
+  "howTo": {
+    "title": "Facile à utiliser",
+    "step1Title": "1. Scannez le code QR",
+    "step1Desc": "Scannez le code QR du magasin avec votre smartphone pour ouvrir la page d'achat",
+    "step2Title": "2. Achetez un FastPass",
+    "step2Desc": "Payez par carte de crédit. Pas d'application nécessaire, tout dans votre navigateur",
+    "step3Title": "3. Accès prioritaire",
+    "step3Desc": "Montrez l'écran du ticket au personnel et évitez l'attente"
+  },
+  "stores": {
+    "title": "Magasins partenaires",
+    "description": "Essayez le processus d'achat via les liens ci-dessous",
+    "closed": "Fermé",
+    "defaultDesc": "Magasin FastPass",
+    "buyFastPass": "Acheter FastPass",
+    "priceFrom": "~"
+  },
+  "buy": {
+    "loadingStore": "Chargement des informations du magasin...",
+    "noStoreSelected": "Aucun magasin sélectionné",
+    "noStoreDesc": "Veuillez scanner un code QR ou sélectionner dans la liste des magasins.",
+    "storeNotFound": "Magasin introuvable",
+    "storeNotFoundDesc": "L'ID du magasin spécifié n'existe pas. Veuillez vérifier l'URL.",
+    "selectQuantity": "Sélectionner la quantité",
+    "quantityLimit": "SUGUKURU est limité à 6 personnes par groupe.",
+    "unitPrice": "Prix unitaire",
+    "subtotal": "Sous-total",
+    "total": "Total",
+    "confirmConsent": "Confirmation du consentement",
+    "pleaseAgree": "Veuillez cocher toutes les cases pour accepter",
+    "purchase": "Procéder à l'achat",
+    "fastPassPurchase": "Acheter FastPass",
+    "confirmOrder": "Confirmation de commande",
+    "store": "Magasin",
+    "purchaseDate": "Date d'achat",
+    "ticketNote": "Cliquez sur \"Sécuriser le ticket\" pour accéder à l'écran de ticket temporaire",
+    "secureTicket": "Sécuriser le ticket",
+    "tickets": "tickets",
+    "persons": "personnes"
+  },
+  "mypage": {
+    "title": "Ma page",
+    "user": "Utilisateur",
+    "registeredCard": "Carte enregistrée",
+    "card": "Carte",
+    "changeCard": "Modifier les infos de carte",
+    "noCard": "Aucune carte enregistrée.",
+    "registerCard": "Enregistrer une carte",
+    "signOut": "Déconnexion",
+    "expiry": "Expiration"
+  },
+  "auth": {
+    "title": "Connexion / Inscription",
+    "emailPlaceholder": "Adresse e-mail",
+    "sendLink": "Envoyer le lien de connexion",
+    "checkEmail": "Vérifiez votre e-mail",
+    "linkSent": "Nous vous avons envoyé un lien de connexion",
+    "orContinueWith": "Ou continuer avec"
+  },
+  "cardSetup": {
+    "title": "Enregistrement de carte",
+    "registerNewCard": "Enregistrer une nouvelle carte",
+    "registering": "Enregistrement...",
+    "register": "Enregistrer"
+  },
+  "tempTicket": {
+    "title": "Confirmation d'achat",
+    "confirmPurchase": "Confirmer cet achat ?",
+    "processing": "Traitement...",
+    "confirmAndPay": "Confirmer et payer"
+  },
+  "success": {
+    "title": "Achat terminé",
+    "thankYou": "Merci pour votre achat",
+    "ticketReady": "Votre ticket a été émis",
+    "showToStaff": "Veuillez montrer cet écran au personnel"
+  },
+  "tokusho": {
+    "title": "Mentions légales (Tokusho)"
+  },
+  "footer": {
+    "tagline": "Sans application - Dans le navigateur - Achat facile par QR code",
+    "tokushoLink": "Mentions légales"
+  },
+  "consent": {
+    "noRefund": "Aucune annulation ni remboursement accepté",
+    "validToday": "Le ticket n'est valable que pour aujourd'hui",
+    "showTicket": "Veuillez montrer l'écran du ticket au personnel à l'entrée"
+  },
+  "contact": {
+    "title": "Nous contacter",
+    "description": "N'hésitez pas à nous contacter pour toute question ou commentaire",
+    "email": "Adresse e-mail",
+    "emailPlaceholder": "votre-email@example.com",
+    "category": "Catégorie",
+    "categoryPlaceholder": "Sélectionner (optionnel)",
+    "subject": "Sujet",
+    "subjectPlaceholder": "Entrez le sujet (optionnel, max 80 caractères)",
+    "body": "Message",
+    "bodyPlaceholder": "Entrez votre message (max 2000 caractères)",
+    "submit": "Envoyer",
+    "note": "Cliquer sur envoyer ouvrira votre application de messagerie",
+    "errors": {
+      "emailRequired": "L'adresse e-mail est obligatoire",
+      "emailInvalid": "Veuillez entrer une adresse e-mail valide",
+      "subjectTooLong": "Le sujet doit comporter 80 caractères ou moins",
+      "bodyRequired": "Le message est obligatoire",
+      "bodyTooLong": "Le message doit comporter 2000 caractères ou moins"
+    }
+  }
+}

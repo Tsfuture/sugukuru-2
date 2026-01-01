@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,6 @@ interface Store {
   name: string;
   description: string | null;
   fastpass_price: number;
-  current_wait_time: number;
   is_open: boolean;
 }
 
@@ -27,6 +27,7 @@ function formatPrice(price: number): string {
 }
 
 export default function Index() {
+  const { t } = useTranslation();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
@@ -37,7 +38,7 @@ export default function Index() {
       try {
         const { data, error } = await supabase
           .from("stores")
-          .select("id, name, description, fastpass_price, current_wait_time, is_open")
+          .select("id, name, description, fastpass_price, is_open")
           .order("name");
 
         if (error) {
@@ -77,18 +78,17 @@ export default function Index() {
               <QrCode className="w-10 h-10 text-primary" />
             </div>
             <h1 className="text-xl font-bold text-foreground mb-2">
-              QRコードを読み取ってください
+              {t('header.scanQR')}
             </h1>
             <p className="text-sm text-muted-foreground">
-              店舗に設置されたQRコードをスキャンすると、
-              FastPass購入ページが開きます
+              {t('header.scanDescription')}
             </p>
           </div>
           
           {peak && (
             <Badge variant="secondary" className="bg-accent text-accent-foreground">
               <TrendingUp className="w-3 h-3 mr-1" />
-              現在ピーク時間帯（18:00〜21:00）
+              {t('header.peakTime')}
             </Badge>
           )}
         </div>
@@ -98,7 +98,7 @@ export default function Index() {
       <section className="py-12 px-4">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold text-center text-foreground mb-8">
-            使い方は簡単
+            {t('howTo.title')}
           </h2>
           
           <div className="grid md:grid-cols-3 gap-6">
@@ -107,11 +107,11 @@ export default function Index() {
                 <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-2">
                   <QrCode className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-lg">1. QRコードを読み取る</CardTitle>
+                <CardTitle className="text-lg">{t('howTo.step1Title')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  店舗のQRコードをスマホで読み取ると、購入ページが開きます
+                  {t('howTo.step1Desc')}
                 </CardDescription>
               </CardContent>
             </Card>
@@ -121,11 +121,11 @@ export default function Index() {
                 <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-2">
                   <Users className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-lg">2. FastPassを購入</CardTitle>
+                <CardTitle className="text-lg">{t('howTo.step2Title')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  クレジットカードで決済。アプリ不要、ブラウザで完結します
+                  {t('howTo.step2Desc')}
                 </CardDescription>
               </CardContent>
             </Card>
@@ -135,11 +135,11 @@ export default function Index() {
                 <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-2">
                   <Clock className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-lg">3. 優先案内を受ける</CardTitle>
+                <CardTitle className="text-lg">{t('howTo.step3Title')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  チケット画面をスタッフに見せて、待ち時間なしで案内されます
+                  {t('howTo.step3Desc')}
                 </CardDescription>
               </CardContent>
             </Card>
@@ -151,10 +151,10 @@ export default function Index() {
       <section className="py-12 px-4 bg-card border-y border-border">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold text-center text-foreground mb-2">
-            導入店舗
+            {t('stores.title')}
           </h2>
           <p className="text-center text-muted-foreground mb-8">
-            下記のリンクから購入フローをお試しいただけます
+            {t('stores.description')}
           </p>
           
           {loading ? (
@@ -175,12 +175,12 @@ export default function Index() {
                           {store.name}
                           {!store.is_open && (
                             <Badge variant="secondary" className="text-xs">
-                              営業時間外
+                              {t('stores.closed')}
                             </Badge>
                           )}
                         </CardTitle>
                         <CardDescription className="mt-1">
-                          {store.description || "FastPass対応店舗"}
+                          {store.description || t('stores.defaultDesc')}
                         </CardDescription>
                       </div>
                       <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
@@ -189,13 +189,9 @@ export default function Index() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Clock className="w-4 h-4" />
-                        <span>待ち時間: {store.current_wait_time}分</span>
-                      </div>
-                      <span className="font-bold text-primary">
-                        {formatPrice(store.fastpass_price)}〜
+                    <div className="flex items-center justify-start">
+                      <span className="font-bold text-primary text-xl">
+                        {formatPrice(store.fastpass_price)}{t('stores.priceFrom')}
                       </span>
                     </div>
                     <Button 
@@ -205,7 +201,7 @@ export default function Index() {
                       disabled={!store.is_open}
                     >
                       <Link to={`/buy?store=${store.id}`}>
-                        FastPassを購入
+                        {t('stores.buyFastPass')}
                         <ArrowRight className="w-4 h-4 ml-1" />
                       </Link>
                     </Button>
@@ -222,15 +218,18 @@ export default function Index() {
         <div className="max-w-4xl mx-auto text-center space-y-4">
           <img src={sugukuruLogo} alt="SUGUKURU" className="h-8 mx-auto opacity-50" />
           <p className="text-sm text-muted-foreground">
-            © 2024 SUGUKURU - 行列スキップサービス
+            ©︎ SUGUKURU ALL Rights Reserved.
           </p>
           <p className="text-xs text-muted-foreground">
-            アプリ不要・ブラウザで完結・QRコードで簡単購入
+            {t('footer.tagline')}
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex items-center justify-center gap-4">
             <Link to="/tokusho" className="text-xs text-muted-foreground hover:text-foreground underline">
-              特定商取引法に基づく表記
+              {t('footer.tokushoLink')}
             </Link>
+            <a href="https://mail.google.com/mail/?view=cm&fs=1&to=sugukuru.jp@gmail.com&su=%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B&body=%E6%9C%AC%E6%96%87%E3%82%92%E3%81%94%E8%A8%98%E5%85%A5%E3%81%8F%E3%81%A0%E3%81%95%E3%81%84" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground underline">
+              {t('contact.title')}
+            </a>
           </div>
         </div>
       </footer>

@@ -1,42 +1,62 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
-import { Resend } from "https://esm.sh/resend@2.0.0";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-// 価格テーブル（src/lib/pricing.ts と同期）
-const PRICING_TABLE: Record<string, { name: string; base: number; peakExtra: number }> = {
-  default: { name: "デフォルト店舗", base: 1000, peakExtra: 0 },
-  "store-a": { name: "レストランA", base: 1200, peakExtra: 300 },
-  "store-b": { name: "クリニックB", base: 1500, peakExtra: 500 },
-  "theme-park": { name: "テーマパークC", base: 2000, peakExtra: 800 },
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 // ピーク時間帯の判定（18:00〜21:00 JST）
 function isPeakTime(): boolean {
-  // Convert to JST (UTC+9)
   const now = new Date();
   const jstHour = (now.getUTCHours() + 9) % 24;
   return jstHour >= 18 && jstHour < 21;
 }
 
-// サーバー側でダイナミックプライシング計算
-function calcDynamicPrice(facilityId: string): { unitPrice: number; dynamicFee: number } {
-  const config = PRICING_TABLE[facilityId] || PRICING_TABLE.default;
-  const basePrice = config.base;
-  const dynamicFee = isPeakTime() ? config.peakExtra : 0;
-  
-  return {
-    unitPrice: basePrice + dynamicFee,
-    dynamicFee,
-  };
+// Store型定義
+interface Store {
+  id: string;
+  name: string;
+  fastpass_price: number;
+  peak_extra_price: number;
+  is_open: boolean;
 }
 
-// 購入確認メールを送信
+// DBから店舗情報を取得し、サーバー側で価格計算
+async function getStoreAndCalcPrice(
+  supabase: SupabaseClient,
+  facilityId: string
+): Promise<{ store: Store; unitPrice: number; dynamicFee: number } | { error: string; status: number }> {
+  const { data: store, error } = await supabase
+    .from("stores")
+    .select("id, name, fastpass_price, peak_extra_price, is_open")
+    .eq("id", facilityId)
+    .single();
+
+  if (error || !store) {
+    console.error("Store fetch error:", error);
+    return { error: `施設が見つかりません: ${facilityId}`, status: 404 };
+  }
+
+  if (!store.is_open) {
+    return { error: "この施設は現在営業していません", status: 400 };
+  }
+
+  if (store.fastpass_price === null || store.fastpass_price === undefined) {
+    console.error("Store has no fastpass_price:", facilityId);
+    return { error: "施設の価格が設定されていません", status: 500 };
+  }
+
+  // サーバー側でダイナミックプライシング計算（DBの値のみ使用）
+  const basePrice = store.fastpass_price;
+  const dynamicFee = isPeakTime() ? (store.peak_extra_price || 0) : 0;
+  const unitPrice = basePrice + dynamicFee;
+
+  return { store, unitPrice, dynamicFee };
+}
+
+// 購入確認メールを送信 (Resend REST API via fetch)
 async function sendConfirmationEmail(
   email: string,
   facilityName: string,
@@ -52,8 +72,6 @@ async function sendConfirmationEmail(
   }
   
   try {
-    const resend = new Resend(resendApiKey);
-    
     const formattedDate = new Date(purchasedAt).toLocaleString("ja-JP", {
       year: "numeric",
       month: "2-digit",
@@ -98,15 +116,23 @@ SUGUKURU FastPass 購入内容のご案内
 SUGUKURUサポートチーム
     `.trim();
     
-    const { error } = await resend.emails.send({
-      from: "SUGUKURU <onboarding@resend.dev>",
-      to: [email],
-      subject: "[SUGUKURU] FastPass 購入内容のご案内",
-      text: emailBody,
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${resendApiKey}`,
+      },
+      body: JSON.stringify({
+        from: "SUGUKURU <onboarding@resend.dev>",
+        to: [email],
+        subject: "[SUGUKURU] FastPass 購入内容のご案内",
+        text: emailBody,
+      }),
     });
     
-    if (error) {
-      console.error("Email send error:", error);
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Email send error:", response.status, errorBody);
     } else {
       console.log("Confirmation email sent to:", email);
     }
@@ -119,7 +145,7 @@ SUGUKURUサポートチーム
 serve(async (req) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
@@ -149,26 +175,54 @@ serve(async (req) => {
       );
     }
 
-    const { facilityId, quantity } = await req.json();
+    const { facilityId, quantity, orderKey } = await req.json();
 
-    console.log(`Processing payment for user: ${user.id}, facility: ${facilityId}, quantity: ${quantity}`);
+    console.log(`Processing payment for user: ${user.id}, facility: ${facilityId}, quantity: ${quantity}, orderKey: ${orderKey}`);
 
-    // Validate input
-    if (!facilityId || !quantity || quantity < 1 || quantity > 6) {
+    // Validate input - orderKey is required for idempotency
+    if (!orderKey || typeof orderKey !== "string") {
       return new Response(
-        JSON.stringify({ error: "Invalid parameters" }),
+        JSON.stringify({ error: "orderKey is required for idempotency", code: "MISSING_ORDER_KEY" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Calculate price SERVER-SIDE (security: never trust client-supplied price)
-    const facilityConfig = PRICING_TABLE[facilityId] || PRICING_TABLE.default;
-    const { unitPrice, dynamicFee } = calcDynamicPrice(facilityId);
-    const totalAmount = unitPrice * quantity;
+    // Validate input - facilityId and quantity are required
+    if (!facilityId || typeof facilityId !== "string") {
+      return new Response(
+        JSON.stringify({ error: "facilityId is required", code: "INVALID_FACILITY_ID" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    console.log(`Price calculation - base: ${facilityConfig.base}, dynamicFee: ${dynamicFee}, unitPrice: ${unitPrice}, total: ${totalAmount}`);
+    const qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 6) {
+      return new Response(
+        JSON.stringify({ error: "quantity must be an integer between 1 and 6", code: "INVALID_QUANTITY" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // Initialize Stripe
+    // ★ DBからストア情報を取得し、価格をサーバー側で計算（フロントの値は無視）
+    const storeResult = await getStoreAndCalcPrice(supabase, facilityId);
+    if ("error" in storeResult) {
+      return new Response(
+        JSON.stringify({ error: storeResult.error, code: "STORE_ERROR" }),
+        { status: storeResult.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { store, unitPrice, dynamicFee } = storeResult;
+    const base = store.fastpass_price;
+    const extra = dynamicFee;
+    const total = unitPrice * qty;
+    const totalAmount = total;
+
+    // ★ 価格計算ログ（指定フォーマット）- DBの値のみを使用していることを確認
+    console.info('Price calculation', { base, extra, unitPrice, quantity: qty, total });
+    console.log(`[SECURITY] Price from DB - store: ${store.name}, basePrice: ${base}, dynamicFee: ${extra}, unitPrice: ${unitPrice}, quantity: ${qty}, totalAmount: ${totalAmount}`);
+
+    // Initialize Stripe (fetch-based)
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecretKey) {
       console.error("STRIPE_SECRET_KEY is not set");
@@ -178,9 +232,7 @@ serve(async (req) => {
       );
     }
 
-    const stripe = new Stripe(stripeSecretKey, {
-      apiVersion: "2023-10-16",
-    });
+    const stripeAuthHeader = `Basic ${btoa(stripeSecretKey + ":")}`;
 
     // Get user profile with Stripe customer ID
     const { data: profile, error: profileError } = await supabase
@@ -197,8 +249,27 @@ serve(async (req) => {
       );
     }
 
-    // Get customer's default payment method
-    const customer = await stripe.customers.retrieve(profile.stripe_customer_id);
+    // Get customer's default payment method via Stripe REST API
+    const customerResponse = await fetch(
+      `https://api.stripe.com/v1/customers/${profile.stripe_customer_id}`,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": stripeAuthHeader,
+        },
+      }
+    );
+    
+    if (!customerResponse.ok) {
+      const errorBody = await customerResponse.text();
+      console.error("Stripe customer fetch error:", customerResponse.status, errorBody);
+      return new Response(
+        JSON.stringify({ error: "Customer not found" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    const customer = await customerResponse.json();
     
     if (customer.deleted) {
       return new Response(
@@ -207,7 +278,7 @@ serve(async (req) => {
       );
     }
 
-    const defaultPaymentMethod = (customer as Stripe.Customer).invoice_settings?.default_payment_method;
+    const defaultPaymentMethod = customer.invoice_settings?.default_payment_method;
     
     if (!defaultPaymentMethod) {
       return new Response(
@@ -218,71 +289,203 @@ serve(async (req) => {
 
     console.log(`Creating PaymentIntent for ${totalAmount} JPY`);
 
-    // Create and confirm PaymentIntent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: totalAmount,
-      currency: "jpy",
-      customer: profile.stripe_customer_id,
-      payment_method: defaultPaymentMethod as string,
-      off_session: true,
-      confirm: true,
-      description: `${facilityConfig.name} - SUGUKURU FastPass x${quantity}`,
-      metadata: {
-        facilityId,
-        quantity: String(quantity),
-        unitPrice: String(unitPrice),
-        dynamicFee: String(dynamicFee),
-        totalAmount: String(totalAmount),
-        userId: user.id,
-      },
-    });
+    // Create and confirm PaymentIntent with idempotencyKey for replay protection (Stripe REST API)
+    interface StripePaymentIntent {
+      id: string;
+      status: string;
+      error?: { message: string };
+    }
+    let paymentIntent: StripePaymentIntent;
+    try {
+      console.log(`Creating PaymentIntent with idempotencyKey: ${orderKey}`);
+      
+      // Build form-urlencoded body
+      const params = new URLSearchParams();
+      params.append("amount", String(totalAmount));
+      params.append("currency", "jpy");
+      params.append("customer", profile.stripe_customer_id);
+      params.append("payment_method", defaultPaymentMethod);
+      params.append("off_session", "true");
+      params.append("confirm", "true");
+      params.append("description", `${store.name} - SUGUKURU FastPass x${qty}`);
+      params.append("metadata[facilityId]", facilityId);
+      params.append("metadata[facilityName]", store.name);
+      params.append("metadata[quantity]", String(qty));
+      params.append("metadata[unitPrice]", String(unitPrice));
+      params.append("metadata[dynamicFee]", String(dynamicFee));
+      params.append("metadata[totalAmount]", String(totalAmount));
+      params.append("metadata[userId]", user.id);
+      params.append("metadata[basePrice]", String(store.fastpass_price));
+      params.append("metadata[orderKey]", orderKey);
+      
+      const piResponse = await fetch("https://api.stripe.com/v1/payment_intents", {
+        method: "POST",
+        headers: {
+          "Authorization": stripeAuthHeader,
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": orderKey,
+        },
+        body: params.toString(),
+      });
+      
+      const piBody = await piResponse.json();
+      
+      if (!piResponse.ok) {
+        console.error("Stripe PaymentIntent creation failed:", piBody);
+        const message = piBody.error?.message || "Stripe error";
+        return new Response(
+          JSON.stringify({ error: `Stripe決済エラー: ${message}`, code: "STRIPE_ERROR" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      paymentIntent = piBody;
+    } catch (stripeError: unknown) {
+      console.error("Stripe PaymentIntent creation failed:", stripeError);
+      const message = stripeError instanceof Error ? stripeError.message : "Stripe error";
+      return new Response(
+        JSON.stringify({ error: `Stripe決済エラー: ${message}`, code: "STRIPE_ERROR" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     console.log(`PaymentIntent created: ${paymentIntent.id}, status: ${paymentIntent.status}`);
 
     if (paymentIntent.status !== "succeeded") {
       return new Response(
-        JSON.stringify({ error: "Payment failed", status: paymentIntent.status }),
+        JSON.stringify({ 
+          success: false, 
+          message: "Payment failed", 
+          code: "PAYMENT_FAILED",
+          paymentStatus: paymentIntent.status,
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Save purchase history with all required fields
-    const purchasedAt = new Date().toISOString();
-    const { data: purchase, error: purchaseError } = await supabase
+    // ★ PaymentIntentが succeeded → ここから先は必ず HTTP 200 を返す
+    // DB保存が失敗してもthrowせず、warningを付けるだけ
+
+    // Save purchase history with all required fields（Stripeに送った金額と完全一致）
+    // テーブル定義: user_id, facility_id, quantity, unit_price, dynamic_fee, total_amount, stripe_payment_intent_id
+    let purchaseId: string | null = null;
+    let warning: string | undefined = undefined;
+
+    // 冪等化: まず order_key または stripe_payment_intent_id で既存レコードを検索
+    // order_key で先に検索（より早い段階で重複検出）
+    let existingPurchase = null;
+    let findError = null;
+    
+    // まず order_key で検索
+    const { data: existingByOrderKey, error: orderKeyFindError } = await supabase
       .from("purchase_history")
-      .insert({
+      .select("id, stripe_payment_intent_id")
+      .eq("order_key", orderKey)
+      .maybeSingle();
+    
+    if (orderKeyFindError) {
+      const { code, message, details, hint } = orderKeyFindError;
+      console.error("purchase_history find by order_key error", { code, message, details, hint });
+      findError = orderKeyFindError;
+    } else if (existingByOrderKey) {
+      existingPurchase = existingByOrderKey;
+      console.log("purchase_history found by order_key (idempotent)", { purchaseId: existingByOrderKey.id, orderKey });
+    } else {
+      // order_key で見つからなければ stripe_payment_intent_id で検索
+      const { data: existingByPi, error: piFindError } = await supabase
+        .from("purchase_history")
+        .select("id")
+        .eq("stripe_payment_intent_id", paymentIntent.id)
+        .maybeSingle();
+      
+      if (piFindError) {
+        const { code, message, details, hint } = piFindError;
+        console.error("purchase_history find by stripe_pi error", { code, message, details, hint });
+        findError = piFindError;
+      } else if (existingByPi) {
+        existingPurchase = existingByPi;
+        console.log("purchase_history found by stripe_payment_intent_id (idempotent)", { purchaseId: existingByPi.id });
+      }
+    }
+
+    if (findError) {
+      const { code, message, details, hint } = findError;
+      console.error("purchase_history find error", { code, message, details, hint, raw: findError });
+    }
+
+    if (existingPurchase) {
+      // 既存レコードがあれば、二重送信として成功扱い
+      purchaseId = existingPurchase.id;
+      console.log("purchase_history already exists (idempotent)", { purchaseId, paymentIntentId: paymentIntent.id });
+    } else {
+      // insert payload - テーブル定義に厳密一致 + order_key for idempotency
+      const insertPayload = {
         user_id: user.id,
-        email: user.email,
         facility_id: facilityId,
-        facility_name: facilityConfig.name,
-        quantity: quantity,
+        facility_name: store.name,  // NOT NULL column in schema
+        quantity: qty,
         unit_price: unitPrice,
         dynamic_fee: dynamicFee,
         total_amount: totalAmount,
-        currency: "jpy",
         stripe_payment_intent_id: paymentIntent.id,
+        order_key: orderKey,
         status: "succeeded",
-        purchased_at: purchasedAt,
-      })
-      .select()
-      .single();
+      };
 
-    if (purchaseError) {
-      console.error("Purchase history error:", purchaseError);
-      // Payment succeeded but history save failed - log but don't fail
+      console.log("purchase_history insert payload:", JSON.stringify(insertPayload));
+
+      const { data: purchase, error: purchaseError } = await supabase
+        .from("purchase_history")
+        .insert(insertPayload)
+        .select("id")
+        .single();
+
+      if (purchaseError) {
+        // PostgRESTエラーの詳細を必ずログ出力
+        const { code, message, details, hint } = purchaseError;
+        console.error("purchase_history insert error", {
+          code,
+          message,
+          details,
+          hint,
+          raw: purchaseError,
+        });
+        
+        // 重複エラー (unique constraint) の場合は冪等として成功扱い
+        if (code === "23505") {
+          console.log("purchase_history duplicate key (idempotent) - concurrent insert detected", { orderKey, paymentIntentId: paymentIntent.id });
+          // 再度検索して ID を取得（order_key または stripe_payment_intent_id）
+          const { data: retryPurchase } = await supabase
+            .from("purchase_history")
+            .select("id")
+            .or(`order_key.eq.${orderKey},stripe_payment_intent_id.eq.${paymentIntent.id}`)
+            .maybeSingle();
+          purchaseId = retryPurchase?.id ?? null;
+          console.log("purchase_history duplicate resolved", { purchaseId });
+        } else {
+          warning = "DB_SAVE_FAILED";
+          purchaseId = null;
+        }
+      } else if (purchase) {
+        purchaseId = purchase.id;
+        console.log("purchase_history saved", { purchaseId, paymentIntentId: paymentIntent.id });
+      } else {
+        console.warn("purchase_history insert returned no data");
+        purchaseId = null;
+      }
     }
 
-    console.log(`Payment successful for user: ${user.id}, purchase: ${purchase?.id}`);
+    console.log(`Payment successful for user: ${user.id}, purchase: ${purchaseId}, amount: ${totalAmount} JPY`);
 
     // Send confirmation email (non-blocking)
     const userEmail = user.email || profile.email;
+    const purchasedAt = new Date().toISOString();
     if (userEmail) {
-      // Use EdgeRuntime.waitUntil if available, otherwise just await
       try {
         await sendConfirmationEmail(
           userEmail,
-          facilityConfig.name,
-          quantity,
+          store.name,
+          qty,
           totalAmount,
           purchasedAt
         );
@@ -292,29 +495,41 @@ serve(async (req) => {
       }
     }
 
+    // ★ 決済成功時は常に HTTP 200 を返す（DB保存失敗でも）
+    const responseBody: Record<string, unknown> = { 
+      success: true, 
+      paymentIntentId: paymentIntent.id,
+      totalAmount: totalAmount,
+      unitPrice: unitPrice,
+      quantity: qty,
+      facilityId: facilityId,
+      facilityName: store.name,
+      purchaseId: purchaseId,
+    };
+    
+    if (warning) {
+      responseBody.warning = warning;
+    }
+
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        purchaseId: purchase?.id,
-        paymentIntentId: paymentIntent.id,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify(responseBody),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
     console.error("Payment error:", error);
     
-    // Handle Stripe card errors
-    if (error instanceof Stripe.errors.StripeCardError) {
-      return new Response(
-        JSON.stringify({ error: "カードが拒否されました。別のカードをお試しください。" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // ★ 例外時も必ずJSONを返す（success: false, message, code）
+    let message = "Unknown error";
+    const code = "UNKNOWN_ERROR";
+    const statusCode = 500;
+
+    if (error instanceof Error) {
+      message = error.message;
     }
 
-    const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ success: false, message, code }),
+      { status: statusCode, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

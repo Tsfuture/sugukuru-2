@@ -1,0 +1,127 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "back": "返回",
+    "next": "下一步",
+    "confirm": "确认",
+    "cancel": "取消",
+    "purchase": "购买",
+    "topPage": "返回首页",
+    "language": "语言"
+  },
+  "header": {
+    "scanQR": "请扫描二维码",
+    "scanDescription": "扫描店铺的二维码以打开 FastPass 购买页面",
+    "peakTime": "当前为高峰时段（18:00-21:00）"
+  },
+  "howTo": {
+    "title": "使用方法很简单",
+    "step1Title": "1. 扫描二维码",
+    "step1Desc": "用智能手机扫描店铺的二维码以打开购买页面",
+    "step2Title": "2. 购买 FastPass",
+    "step2Desc": "使用信用卡付款。无需应用程序，在浏览器中完成",
+    "step3Title": "3. 享受优先服务",
+    "step3Desc": "向工作人员出示票券画面，免排队入场"
+  },
+  "stores": {
+    "title": "合作店铺",
+    "description": "从以下链接体验购买流程",
+    "closed": "非营业时间",
+    "defaultDesc": "FastPass 支持店铺",
+    "buyFastPass": "购买 FastPass",
+    "priceFrom": "起"
+  },
+  "buy": {
+    "loadingStore": "加载店铺信息中...",
+    "noStoreSelected": "尚未选择店铺",
+    "noStoreDesc": "请扫描二维码或从店铺列表中选择。",
+    "storeNotFound": "找不到店铺",
+    "storeNotFoundDesc": "指定的店铺 ID 不存在。请确认网址。",
+    "selectQuantity": "选择数量",
+    "quantityLimit": "SUGUKURU 每组限 6 人。",
+    "unitPrice": "单价",
+    "subtotal": "小计",
+    "total": "总计",
+    "confirmConsent": "同意确认",
+    "pleaseAgree": "请勾选上方所有项目以表示同意",
+    "purchase": "前往购买",
+    "fastPassPurchase": "购买 FastPass",
+    "confirmOrder": "订单确认",
+    "store": "店铺",
+    "purchaseDate": "购买日期",
+    "ticketNote": "点击\"确保票券\"前往临时票券界面",
+    "secureTicket": "确保票券",
+    "tickets": "张",
+    "persons": "人"
+  },
+  "mypage": {
+    "title": "我的页面",
+    "user": "用户",
+    "registeredCard": "已注册的卡片",
+    "card": "卡片",
+    "changeCard": "变更卡片信息",
+    "noCard": "尚未注册卡片。",
+    "registerCard": "注册卡片",
+    "signOut": "退出登录",
+    "expiry": "有效期"
+  },
+  "auth": {
+    "title": "登录 / 注册",
+    "emailPlaceholder": "电子邮件地址",
+    "sendLink": "发送登录链接",
+    "checkEmail": "请检查您的电子邮件",
+    "linkSent": "已将登录链接发送至您的电子邮件",
+    "orContinueWith": "或继续使用"
+  },
+  "cardSetup": {
+    "title": "卡片注册",
+    "registerNewCard": "注册新卡片",
+    "registering": "注册中...",
+    "register": "注册"
+  },
+  "tempTicket": {
+    "title": "购买确认",
+    "confirmPurchase": "确认此购买？",
+    "processing": "处理中...",
+    "confirmAndPay": "确认并付款"
+  },
+  "success": {
+    "title": "购买完成",
+    "thankYou": "感谢您的购买",
+    "ticketReady": "您的票券已发行",
+    "showToStaff": "请向工作人员出示此画面"
+  },
+  "tokusho": {
+    "title": "特定商业交易法标示"
+  },
+  "footer": {
+    "tagline": "无需应用程序 - 浏览器即可完成 - 二维码轻松购买",
+    "tokushoLink": "特定商业交易法标示"
+  },
+  "consent": {
+    "noRefund": "不接受取消或退款",
+    "validToday": "票券仅当日有效",
+    "showTicket": "入场时请向工作人员出示票券画面"
+  },
+  "contact": {
+    "title": "联系我们",
+    "description": "如有问题或意见，请随时与我们联系",
+    "email": "电子邮箱",
+    "emailPlaceholder": "your-email@example.com",
+    "category": "类别",
+    "categoryPlaceholder": "请选择（可选）",
+    "subject": "主题",
+    "subjectPlaceholder": "请输入主题（可选，80字以内）",
+    "body": "内容",
+    "bodyPlaceholder": "请输入内容（2000字以内）",
+    "submit": "发送",
+    "note": "点击发送将打开您的邮件应用",
+    "errors": {
+      "emailRequired": "请输入电子邮箱",
+      "emailInvalid": "请输入有效的电子邮箱",
+      "subjectTooLong": "主题请在80字以内",
+      "bodyRequired": "请输入内容",
+      "bodyTooLong": "内容请在2000字以内"
+    }
+  }
+}

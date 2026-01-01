@@ -1,0 +1,127 @@
+{
+  "common": {
+    "loading": "載入中...",
+    "back": "返回",
+    "next": "下一步",
+    "confirm": "確認",
+    "cancel": "取消",
+    "purchase": "購買",
+    "topPage": "返回首頁",
+    "language": "語言"
+  },
+  "header": {
+    "scanQR": "請掃描 QR 碼",
+    "scanDescription": "掃描店舖的 QR 碼以開啟 FastPass 購買頁面",
+    "peakTime": "目前為尖峰時段（18:00-21:00）"
+  },
+  "howTo": {
+    "title": "使用方法很簡單",
+    "step1Title": "1. 掃描 QR 碼",
+    "step1Desc": "用智慧手機掃描店舖的 QR 碼以開啟購買頁面",
+    "step2Title": "2. 購買 FastPass",
+    "step2Desc": "使用信用卡付款。無需應用程式，在瀏覽器中完成",
+    "step3Title": "3. 享受優先服務",
+    "step3Desc": "向工作人員出示票券畫面，免排隊入場"
+  },
+  "stores": {
+    "title": "合作店舖",
+    "description": "從以下連結體驗購買流程",
+    "closed": "非營業時間",
+    "defaultDesc": "FastPass 支援店舖",
+    "buyFastPass": "購買 FastPass",
+    "priceFrom": "起"
+  },
+  "buy": {
+    "loadingStore": "載入店舖資訊中...",
+    "noStoreSelected": "尚未選擇店舖",
+    "noStoreDesc": "請掃描 QR 碼或從店舖列表中選擇。",
+    "storeNotFound": "找不到店舖",
+    "storeNotFoundDesc": "指定的店舖 ID 不存在。請確認網址。",
+    "selectQuantity": "選擇數量",
+    "quantityLimit": "SUGUKURU 每組限 6 人。",
+    "unitPrice": "單價",
+    "subtotal": "小計",
+    "total": "總計",
+    "confirmConsent": "同意確認",
+    "pleaseAgree": "請勾選上方所有項目以表示同意",
+    "purchase": "前往購買",
+    "fastPassPurchase": "購買 FastPass",
+    "confirmOrder": "訂單確認",
+    "store": "店舗",
+    "purchaseDate": "購買日期",
+    "ticketNote": "點擊\"確保票券\"前往臨時票券畫面",
+    "secureTicket": "確保票券",
+    "tickets": "張",
+    "persons": "人"
+  },
+  "mypage": {
+    "title": "我的頁面",
+    "user": "使用者",
+    "registeredCard": "已註冊的卡片",
+    "card": "卡片",
+    "changeCard": "變更卡片資訊",
+    "noCard": "尚未註冊卡片。",
+    "registerCard": "註冊卡片",
+    "signOut": "登出",
+    "expiry": "有效期限"
+  },
+  "auth": {
+    "title": "登入 / 註冊",
+    "emailPlaceholder": "電子郵件地址",
+    "sendLink": "發送登入連結",
+    "checkEmail": "請檢查您的電子郵件",
+    "linkSent": "已將登入連結發送至您的電子郵件",
+    "orContinueWith": "或繼續使用"
+  },
+  "cardSetup": {
+    "title": "卡片註冊",
+    "registerNewCard": "註冊新卡片",
+    "registering": "註冊中...",
+    "register": "註冊"
+  },
+  "tempTicket": {
+    "title": "購買確認",
+    "confirmPurchase": "確認此購買？",
+    "processing": "處理中...",
+    "confirmAndPay": "確認並付款"
+  },
+  "success": {
+    "title": "購買完成",
+    "thankYou": "感謝您的購買",
+    "ticketReady": "您的票券已發行",
+    "showToStaff": "請向工作人員出示此畫面"
+  },
+  "tokusho": {
+    "title": "特定商業交易法標示"
+  },
+  "footer": {
+    "tagline": "無需應用程式 - 瀏覽器即可完成 - QR 碼輕鬆購買",
+    "tokushoLink": "特定商業交易法標示"
+  },
+  "consent": {
+    "noRefund": "不接受取消或退款",
+    "validToday": "票券僅當日有效",
+    "showTicket": "入場時請向工作人員出示票券畫面"
+  },
+  "contact": {
+    "title": "聯絡我們",
+    "description": "如有問題或意見，請隨時與我們聯絡",
+    "email": "電子郵件",
+    "emailPlaceholder": "your-email@example.com",
+    "category": "類別",
+    "categoryPlaceholder": "請選擇（選填）",
+    "subject": "主旨",
+    "subjectPlaceholder": "請輸入主旨（選填，80字以內）",
+    "body": "內容",
+    "bodyPlaceholder": "請輸入內容（2000字以內）",
+    "submit": "發送",
+    "note": "點擊發送將開啟您的郵件應用程式",
+    "errors": {
+      "emailRequired": "請輸入電子郵件",
+      "emailInvalid": "請輸入有效的電子郵件",
+      "subjectTooLong": "主旨請在80字以內",
+      "bodyRequired": "請輸入內容",
+      "bodyTooLong": "內容請在2000字以內"
+    }
+  }
+}

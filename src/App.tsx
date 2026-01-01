@@ -4,9 +4,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import Index from "./pages/Index";
 import Buy from "./pages/Buy";
 import Auth from "./pages/Auth";
+import AuthCallback from "./pages/AuthCallback";
 import CardSetup from "./pages/CardSetup";
 import TempTicket from "./pages/TempTicket";
 import Success from "./pages/Success";
@@ -21,12 +23,17 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      {/* 全ページ共通の言語切替ボタン（右上固定） */}
+      <div className="fixed top-2 right-2 z-50">
+        <LanguageSwitcher />
+      </div>
       <BrowserRouter>
         <AuthProvider>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/buy" element={<Buy />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/card-setup" element={<CardSetup />} />
             <Route path="/temp-ticket" element={<TempTicket />} />
             <Route path="/success" element={<Success />} />

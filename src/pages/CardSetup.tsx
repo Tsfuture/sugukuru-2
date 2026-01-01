@@ -10,14 +10,13 @@ import {
   useElements 
 } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
-import { CreditCard, Lock, Zap, User } from "lucide-react";
+import { calcDynamicPrice } from "@/lib/pricing";
+import { CreditCard, Zap, User } from "lucide-react";
 
 // Initialize Stripe with publishable key
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
@@ -50,16 +49,29 @@ function CardSetupForm() {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [loadingIntent, setLoadingIntent] = useState(false);
   const [cardholderName, setCardholderName] = useState("");
-  const [saveCard, setSaveCard] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  // 既に confirmCardSetup が成功した paymentMethodId を保持
+  const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
 
   const facilityId = searchParams.get("facility") || "";
-  const quantity = searchParams.get("quantity") || "";
+  const quantity = searchParams.get("quantity") || "1";
 
   const getRedirectUrl = () => {
     const params = new URLSearchParams();
     if (facilityId) params.set("facility", facilityId);
     if (quantity) params.set("quantity", quantity);
     return `/buy${params.toString() ? `?${params.toString()}` : ""}`;
+  };
+
+  // カード登録後に /temp-ticket へ遷移するためのURL
+  const getTempTicketUrl = () => {
+    const params = new URLSearchParams();
+    params.set("facility", facilityId || "default");
+    params.set("quantity", quantity || "1");
+    // 単価をダイナミックプライシングで計算
+    const unitPrice = calcDynamicPrice(facilityId || "default");
+    params.set("unitPrice", String(unitPrice));
+    return `/temp-ticket?${params.toString()}`;
   };
 
   useEffect(() => {
@@ -75,78 +87,109 @@ function CardSetupForm() {
     }
   }, [profile, loading, navigate]);
 
-  // Create SetupIntent when component mounts
-  useEffect(() => {
-    const createSetupIntent = async () => {
-      if (!user || clientSecret) return;
+  // Create SetupIntent function - 毎回新しいものを作成
+  const createSetupIntent = async (): Promise<string | null> => {
+    if (!user) return null;
+    
+    setLoadingIntent(true);
+    setSetupError(null);
+    // 前回のを無効化
+    setClientSecret(null);
+    setConfirmedPaymentMethodId(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("stripe-setup-intent");
       
-      setLoadingIntent(true);
-      try {
-        const { data, error } = await supabase.functions.invoke("create-setup-intent");
-        
-        if (error) {
-          console.error("Failed to create SetupIntent:", error);
-          toast({
-            title: "エラー",
-            description: "カード登録の準備に失敗しました",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        if (data?.clientSecret) {
-          setClientSecret(data.clientSecret);
-        }
-      } catch (err) {
-        console.error("SetupIntent error:", err);
-      } finally {
-        setLoadingIntent(false);
+      if (error) {
+        console.error("Failed to create SetupIntent:", error);
+        setSetupError("カード登録の準備に失敗しました。再試行してください。");
+        return null;
       }
-    };
 
-    createSetupIntent();
-  }, [user]);
+      if (data?.clientSecret) {
+        setClientSecret(data.clientSecret);
+        return data.clientSecret;
+      }
+      return null;
+    } catch (err) {
+      console.error("SetupIntent error:", err);
+      setSetupError("カード登録の準備に失敗しました。再試行してください。");
+      return null;
+    } finally {
+      setLoadingIntent(false);
+    }
+  };
+
+  // setup-card 呼び出しを分離して再試行可能に
+  const callSetupCard = async (paymentMethodId: string): Promise<boolean> => {
+    console.log("Calling setup-card with paymentMethodId:", paymentMethodId);
+    
+    const { data, error } = await supabase.functions.invoke("setup-card", {
+      body: { paymentMethodId },
+    });
+
+    if (error) {
+      console.error("setup-card invocation error:", error);
+      // FunctionsHttpError の場合、error.context に詳細がある場合あり
+      const errorMsg = error.message || "カード情報の保存に失敗しました";
+      setSetupError(errorMsg);
+      return false;
+    }
+
+    if (!data?.success) {
+      console.error("setup-card returned error:", data);
+      // サーバーからのエラーメッセージを表示
+      const errorDetail = data?.message || data?.error_code || "カード情報の保存に失敗しました";
+      const details = data?.details ? ` (${data.details})` : "";
+      setSetupError(`${errorDetail}${details}`);
+      return false;
+    }
+
+    console.log("setup-card succeeded:", data);
+    return true;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!stripe || !elements || !clientSecret) {
-      toast({
-        title: "エラー",
-        description: "決済システムの読み込み中です。しばらくお待ちください。",
-        variant: "destructive",
-      });
+    if (!stripe || !elements) {
+      setSetupError("決済システムの読み込み中です。しばらくお待ちください。");
       return;
     }
 
     if (!cardholderName.trim()) {
-      toast({
-        title: "入力エラー",
-        description: "カード名義人を入力してください",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!saveCard) {
-      toast({
-        title: "確認が必要です",
-        description: "カード情報を登録するにはチェックを入れてください",
-        variant: "destructive",
-      });
+      setSetupError("カード名義人を入力してください");
       return;
     }
 
     setSubmitting(true);
+    setSetupError(null);
 
     try {
+      // 既に confirmCardSetup が成功している場合は setup-card の再試行のみ
+      if (confirmedPaymentMethodId) {
+        console.log("Retrying setup-card with already confirmed paymentMethodId:", confirmedPaymentMethodId);
+        const success = await callSetupCard(confirmedPaymentMethodId);
+        if (success) {
+          await refreshProfile();
+          navigate(getTempTicketUrl());
+        }
+        return;
+      }
+
+      // 新しい SetupIntent を取得（既存のを再利用しない）
+      const secret = await createSetupIntent();
+      if (!secret) {
+        return;
+      }
+
       const cardNumberElement = elements.getElement(CardNumberElement);
       if (!cardNumberElement) {
         throw new Error("Card element not found");
       }
 
-      // Confirm the SetupIntent with the card details (card data stays with Stripe)
-      const { setupIntent, error: stripeError } = await stripe.confirmCardSetup(clientSecret, {
+      // Confirm the SetupIntent with the card details
+      const { setupIntent, error: stripeError } = await stripe.confirmCardSetup(secret, {
         payment_method: {
           card: cardNumberElement,
           billing_details: {
@@ -157,52 +200,70 @@ function CardSetupForm() {
 
       if (stripeError) {
         console.error("Stripe error:", stripeError);
-        toast({
-          title: "カード登録エラー",
-          description: stripeError.message || "カード情報の確認に失敗しました",
-          variant: "destructive",
-        });
+
+        // setup_intent_unexpected_state の場合、既に succeeded かもしれない
+        if (stripeError.code === "setup_intent_unexpected_state") {
+          console.log("SetupIntent unexpected state, checking current status...");
+          
+          // 現在の SetupIntent 状態を確認
+          const { setupIntent: existingIntent } = await stripe.retrieveSetupIntent(secret);
+          
+          if (existingIntent?.status === "succeeded" && existingIntent.payment_method) {
+            console.log("SetupIntent already succeeded, proceeding to setup-card");
+            const pmId = typeof existingIntent.payment_method === "string"
+              ? existingIntent.payment_method
+              : existingIntent.payment_method.id;
+            
+            setConfirmedPaymentMethodId(pmId);
+            const success = await callSetupCard(pmId);
+            if (success) {
+              await refreshProfile();
+              navigate(getTempTicketUrl());
+            }
+            return;
+          }
+          
+          // succeeded でない場合は新しい SetupIntent で再試行を促す
+          setClientSecret(null);
+          setSetupError("カード登録の状態が不正です。もう一度お試しください。");
+          return;
+        }
+
+        setSetupError(stripeError.message || "カード情報の確認に失敗しました");
+        // エラー時は clientSecret をクリアして次回新しいものを取得
+        setClientSecret(null);
         return;
       }
 
       if (setupIntent?.status === "succeeded" && setupIntent.payment_method) {
-        // Now save the payment method to the customer's profile
-        const { data, error } = await supabase.functions.invoke("setup-card", {
-          body: {
-            paymentMethodId: setupIntent.payment_method,
-          },
-        });
+        const pmId = typeof setupIntent.payment_method === "string"
+          ? setupIntent.payment_method
+          : setupIntent.payment_method.id;
 
-        if (error || !data?.success) {
-          console.error("Card setup error:", error || data?.error);
-          toast({
-            title: "カード登録エラー",
-            description: "カード情報の保存に失敗しました",
-            variant: "destructive",
-          });
-          return;
+        // confirmCardSetup 成功を記録
+        setConfirmedPaymentMethodId(pmId);
+
+        // setup-card を呼び出し
+        const success = await callSetupCard(pmId);
+        if (success) {
+          await refreshProfile();
+          navigate(getTempTicketUrl());
         }
-
-        await refreshProfile();
-        toast({
-          title: "カード登録完了",
-          description: "カード情報を登録しました。チケット購入に進めます。",
-        });
-        navigate(getRedirectUrl());
+        // 失敗時は confirmedPaymentMethodId が残っているので再試行可能
+      } else {
+        setSetupError("カード登録が完了しませんでした。もう一度お試しください。");
+        setClientSecret(null);
       }
     } catch (err) {
       console.error("Card setup error:", err);
-      toast({
-        title: "エラー",
-        description: "予期しないエラーが発生しました",
-        variant: "destructive",
-      });
+      setSetupError("予期しないエラーが発生しました");
+      setClientSecret(null);
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading || loadingIntent) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-muted-foreground">読み込み中...</div>
@@ -231,9 +292,6 @@ function CardSetupForm() {
               <CreditCard className="w-5 h-5 text-primary" />
               <CardTitle className="text-lg">お支払い情報</CardTitle>
             </div>
-            <CardDescription>
-              カード情報はStripeによって安全に管理されます
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -297,32 +355,22 @@ function CardSetupForm() {
                 />
               </div>
 
-              {/* Save Card Checkbox */}
-              <div className="flex items-center space-x-3 py-2">
-                <Checkbox 
-                  id="save-card" 
-                  checked={saveCard}
-                  onCheckedChange={(checked) => setSaveCard(checked === true)}
-                />
-                <Label 
-                  htmlFor="save-card" 
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  このカード情報を登録する
-                </Label>
-              </div>
+              {/* Error display */}
+              {setupError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  {setupError}
+                </div>
+              )}
 
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-accent/30 rounded-lg p-3">
-                <Lock className="w-4 h-4 flex-shrink-0" />
-                <span>カード情報はStripeによって安全に暗号化・保管されます。当社サーバーには一切保存されません。</span>
-              </div>
+              {/* Spacer to maintain layout */}
+              <div className="py-2" />
 
               <Button 
                 type="submit" 
                 className="w-full" 
-                disabled={submitting || !stripe || !clientSecret || !saveCard}
+                disabled={submitting || !stripe || loadingIntent}
               >
-                {submitting ? "登録中..." : "このカードを登録する"}
+                {submitting || loadingIntent ? "登録中..." : "このカードを登録する"}
               </Button>
             </form>
           </CardContent>

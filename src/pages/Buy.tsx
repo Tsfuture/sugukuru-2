@@ -10,7 +10,7 @@ import { ConsentCheckbox, DEFAULT_CONSENT_ITEMS } from "@/components/ConsentChec
 import { formatPrice } from "@/lib/pricing";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ArrowRight, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUp, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
 
 type StoreRow = {
@@ -328,6 +328,19 @@ export default function Buy() {
             </ul>
           </CardContent>
         </Card>
+        
+        {/* トップに戻るボタン */}
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="gap-2"
+          >
+            <ArrowUp className="w-4 h-4" />
+            {t('common.backToTop')}
+          </Button>
+        </div>
         
         {/* フッター */}
         <p className="text-xs text-center text-muted-foreground">

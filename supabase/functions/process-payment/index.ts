@@ -1,36 +1,66 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
+// ★ バージョン情報（デプロイ確認用）
+const FUNCTION_VERSION = "2.0.0-dynamic-pricing";
+const BUILD_TIME = "2026-01-02T00:00:00Z";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ピーク時間帯の判定（18:00〜21:00 JST）
-function isPeakTime(): boolean {
-  const now = new Date();
-  const jstHour = (now.getUTCHours() + 9) % 24;
-  return jstHour >= 18 && jstHour < 21;
-}
-
-// Store型定義
+// Store型定義（ダイナミックプライシング対応）
 interface Store {
   id: string;
   name: string;
   fastpass_price: number;
   peak_extra_price: number;
   is_open: boolean;
+  current_wait_time: number;
+  dynamic_enabled: boolean;
+  avg_spend_yen: number;
+  turnover_per_hour: number;
+  target_fastpass_per_hour: number;
+  min_price: number;
+  max_price: number;
+  k_util: number;
+  k_step: number;
+  k_wait: number;
+  k_env: number;
 }
 
-// DBから店舗情報を取得し、サーバー側で価格計算
+// Round to nearest 10 yen
+function roundTo10Yen(price: number): number {
+  return Math.round(price / 10) * 10;
+}
+
+// Clamp value between min and max
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+// Calculate 10-minute time slot ID
+function getSlotId(): string {
+  const now = Math.floor(Date.now() / 1000);
+  const slot = Math.floor(now / 600); // 10-minute slots
+  return `slot_${slot}`;
+}
+
+// DBから店舗情報を取得し、get-priceと同じダイナミックプライシングで価格計算
 async function getStoreAndCalcPrice(
   supabase: SupabaseClient,
   facilityId: string
 ): Promise<{ store: Store; unitPrice: number; dynamicFee: number } | { error: string; status: number }> {
+  // get-priceと同じカラムを取得
   const { data: store, error } = await supabase
     .from("stores")
-    .select("id, name, fastpass_price, peak_extra_price, is_open")
+    .select(`
+      id, name, fastpass_price, peak_extra_price, is_open,
+      current_wait_time, dynamic_enabled, avg_spend_yen, turnover_per_hour,
+      target_fastpass_per_hour, min_price, max_price, k_util, k_step, k_wait, k_env
+    `)
     .eq("id", facilityId)
     .single();
 
@@ -48,12 +78,87 @@ async function getStoreAndCalcPrice(
     return { error: "施設の価格が設定されていません", status: 500 };
   }
 
-  // サーバー側でダイナミックプライシング計算（DBの値のみ使用）
-  const basePrice = store.fastpass_price;
-  const dynamicFee = isPeakTime() ? (store.peak_extra_price || 0) : 0;
-  const unitPrice = basePrice + dynamicFee;
+  const storeData = store as Store;
 
-  return { store, unitPrice, dynamicFee };
+  // ★ get-price と同じダイナミックプライシングロジック
+  if (!storeData.dynamic_enabled) {
+    // ダイナミックプライシング無効時: 従来のピーク時間帯計算
+    const now = new Date();
+    const jstHour = (now.getUTCHours() + 9) % 24;
+    const isPeak = jstHour >= 18 && jstHour < 21;
+    const dynamicFee = isPeak ? (storeData.peak_extra_price || 0) : 0;
+    const unitPrice = storeData.fastpass_price + dynamicFee;
+
+    console.log(`[price-calc] dynamic_enabled=false, base=${storeData.fastpass_price}, dynamicFee=${dynamicFee}, unitPrice=${unitPrice}`);
+    return { store: storeData, unitPrice, dynamicFee };
+  }
+
+  // ★ ダイナミックプライシング有効時: get-price と完全同一のロジック
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const slotStartSeconds = Math.floor(Date.now() / 1000 / 600) * 600;
+  const slotStart = new Date(slotStartSeconds * 1000);
+  const slotId = getSlotId();
+
+  // Count purchases in the last hour for utilization
+  const { count: hourlyPurchases, error: hourlyError } = await supabase
+    .from("purchase_history")
+    .select("*", { count: "exact", head: true })
+    .eq("facility_id", facilityId)
+    .eq("status", "completed")
+    .gte("created_at", oneHourAgo.toISOString());
+
+  if (hourlyError) {
+    console.warn("Hourly purchase count error (using fallback):", hourlyError);
+  }
+
+  // Count purchases in current 10-minute slot
+  const { count: slotPurchases, error: slotError } = await supabase
+    .from("purchase_history")
+    .select("*", { count: "exact", head: true })
+    .eq("facility_id", facilityId)
+    .eq("status", "completed")
+    .gte("created_at", slotStart.toISOString());
+
+  if (slotError) {
+    console.warn("Slot purchase count error (using fallback):", slotError);
+  }
+
+  // Calculate utilization (0-1 range, can exceed 1 if over target)
+  const effectiveHourlyPurchases = hourlyPurchases ?? 0;
+  const effectiveSlotPurchases = slotPurchases ?? 0;
+  const util = storeData.target_fastpass_per_hour > 0
+    ? effectiveHourlyPurchases / storeData.target_fastpass_per_hour
+    : 0;
+
+  // Environment score based on wait time (longer wait = higher congestion)
+  // Normalize: 30 minutes = env_score of 1.0
+  const envScore = Math.min(storeData.current_wait_time / 30, 2.0);
+
+  // Base price calculation: 60% of average spend, clamped to min/max
+  const rawBase = Math.round(storeData.avg_spend_yen * 0.6);
+  const basePrice = clamp(rawBase, storeData.min_price, storeData.max_price);
+
+  // Calculate effects
+  const utilEffect = storeData.k_util * util;
+  const stepEffect = storeData.k_step * effectiveSlotPurchases;
+  const waitEffect = storeData.k_wait * storeData.current_wait_time;
+  const envEffect = storeData.k_env * envScore;
+
+  // Total multiplier
+  const multiplier = 1 + utilEffect + stepEffect + waitEffect + envEffect;
+
+  // Calculate final price
+  const rawPrice = basePrice * multiplier;
+  const clampedPrice = clamp(rawPrice, storeData.min_price, storeData.max_price);
+  const finalPrice = roundTo10Yen(clampedPrice);
+
+  // dynamicFee は basePrice からの差分として計算
+  const dynamicFee = finalPrice - storeData.fastpass_price;
+
+  console.log(`[price-calc] dynamic_enabled=true, slot=${slotId}, base=${basePrice}, multiplier=${multiplier.toFixed(3)}, finalPrice=${finalPrice}, dynamicFee=${dynamicFee}`);
+
+  return { store: storeData, unitPrice: finalPrice, dynamicFee };
 }
 
 // 購入確認メールを送信 (Resend REST API via fetch)
@@ -175,7 +280,18 @@ serve(async (req) => {
       );
     }
 
-    const { facilityId, quantity, orderKey } = await req.json();
+    const { facilityId, quantity, orderKey, traceId } = await req.json();
+
+    // ★ TRACE: リクエスト受信ログ
+    console.info(`[TRACE] process-payment received`, {
+      traceId: traceId || "NO_TRACE_ID",
+      version: FUNCTION_VERSION,
+      buildTime: BUILD_TIME,
+      facilityId,
+      quantity,
+      orderKey,
+      userId: user.id,
+    });
 
     console.log(`Processing payment for user: ${user.id}, facility: ${facilityId}, quantity: ${quantity}, orderKey: ${orderKey}`);
 
@@ -288,6 +404,18 @@ serve(async (req) => {
     }
 
     console.log(`Creating PaymentIntent for ${totalAmount} JPY`);
+
+    // ★ TRACE: Stripe呼び出し直前のログ
+    console.info(`[TRACE] stripe_create`, {
+      traceId: traceId || "NO_TRACE_ID",
+      version: FUNCTION_VERSION,
+      amount: totalAmount,
+      currency: "jpy",
+      facility_id: facilityId,
+      quantity: qty,
+      price_yen: unitPrice,
+      dynamic_enabled: store.dynamic_enabled,
+    });
 
     // Create and confirm PaymentIntent with idempotencyKey for replay protection (Stripe REST API)
     interface StripePaymentIntent {
@@ -505,6 +633,12 @@ serve(async (req) => {
       facilityId: facilityId,
       facilityName: store.name,
       purchaseId: purchaseId,
+      // ★ デバッグ/トレース情報
+      version: FUNCTION_VERSION,
+      traceId: traceId || null,
+      computed_amount: totalAmount,
+      price_yen: unitPrice,
+      dynamic_enabled: store.dynamic_enabled,
     };
     
     if (warning) {

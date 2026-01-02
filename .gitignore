@@ -32,3 +32,5 @@ dist-ssr
 *.pem
 *.key
 .env.*.local
+# local supabase temp
+supabase/.temp/

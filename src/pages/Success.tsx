@@ -70,6 +70,17 @@ export default function Success() {
   const facilityName = purchase?.facility_name || getFacilityInfo(facilityIdParam).name;
   const quantity = purchase?.quantity || quantityParam;
   const totalAmount = purchase?.total_amount || totalParam;
+
+  // ★ TRACE: 金額ソースのログ
+  console.info(`[TRACE] success_amount_source`, {
+    source: purchase ? "purchase_history_db" : "url_params",
+    purchaseId,
+    dbTotalAmount: purchase?.total_amount,
+    urlTotalParam: totalParam,
+    finalTotalAmount: totalAmount,
+    dbUnitPrice: purchase?.unit_price,
+    paymentIntentId: searchParams.get("paymentIntentId"),
+  });
   
   // Format purchase date
   const purchasedAt = purchase?.purchased_at 

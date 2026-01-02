@@ -1,15 +1,101 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function isPeakTime(): boolean {
-  const hour = new Date().getHours();
-  return hour >= 18 && hour < 21;
+// Store type from DB (with dynamic pricing columns)
+interface Store {
+  id: string;
+  name: string;
+  fastpass_price: number;
+  peak_extra_price: number;
+  is_open: boolean;
+  current_wait_time: number;
+  dynamic_enabled: boolean;
+  avg_spend_yen: number;
+  turnover_per_hour: number;
+  target_fastpass_per_hour: number;
+  min_price: number;
+  max_price: number;
+  k_util: number;
+  k_step: number;
+  k_wait: number;
+  k_env: number;
+}
+
+// Round to nearest 10 yen
+function roundTo10Yen(price: number): number {
+  return Math.round(price / 10) * 10;
+}
+
+// Clamp value between min and max
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+// ★ get-price と同じダイナミックプライシングロジック
+async function calcDynamicPrice(
+  supabase: SupabaseClient,
+  storeData: Store
+): Promise<{ unitPrice: number; dynamicFee: number }> {
+  if (!storeData.dynamic_enabled) {
+    // ダイナミックプライシング無効時: 従来のピーク時間帯計算
+    const now = new Date();
+    const jstHour = (now.getUTCHours() + 9) % 24;
+    const isPeak = jstHour >= 18 && jstHour < 21;
+    const dynamicFee = isPeak ? (storeData.peak_extra_price || 0) : 0;
+    const unitPrice = storeData.fastpass_price + dynamicFee;
+    return { unitPrice, dynamicFee };
+  }
+
+  // ダイナミックプライシング有効時
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const slotStartSeconds = Math.floor(Date.now() / 1000 / 600) * 600;
+  const slotStart = new Date(slotStartSeconds * 1000);
+
+  // Count purchases in the last hour for utilization
+  const { count: hourlyPurchases } = await supabase
+    .from("purchase_history")
+    .select("*", { count: "exact", head: true })
+    .eq("facility_id", storeData.id)
+    .eq("status", "completed")
+    .gte("created_at", oneHourAgo.toISOString());
+
+  // Count purchases in current 10-minute slot
+  const { count: slotPurchases } = await supabase
+    .from("purchase_history")
+    .select("*", { count: "exact", head: true })
+    .eq("facility_id", storeData.id)
+    .eq("status", "completed")
+    .gte("created_at", slotStart.toISOString());
+
+  const effectiveHourlyPurchases = hourlyPurchases ?? 0;
+  const effectiveSlotPurchases = slotPurchases ?? 0;
+  const util = storeData.target_fastpass_per_hour > 0
+    ? effectiveHourlyPurchases / storeData.target_fastpass_per_hour
+    : 0;
+
+  const envScore = Math.min(storeData.current_wait_time / 30, 2.0);
+  const rawBase = Math.round(storeData.avg_spend_yen * 0.6);
+  const basePrice = clamp(rawBase, storeData.min_price, storeData.max_price);
+
+  const utilEffect = storeData.k_util * util;
+  const stepEffect = storeData.k_step * effectiveSlotPurchases;
+  const waitEffect = storeData.k_wait * storeData.current_wait_time;
+  const envEffect = storeData.k_env * envScore;
+
+  const multiplier = 1 + utilEffect + stepEffect + waitEffect + envEffect;
+  const rawPrice = basePrice * multiplier;
+  const clampedPrice = clamp(rawPrice, storeData.min_price, storeData.max_price);
+  const finalPrice = roundTo10Yen(clampedPrice);
+  const dynamicFee = finalPrice - storeData.fastpass_price;
+
+  return { unitPrice: finalPrice, dynamicFee };
 }
 
 serve(async (req) => {
@@ -36,10 +122,14 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch store data from database
+    // Fetch store data from database (with dynamic pricing columns)
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("*")
+      .select(`
+        id, name, fastpass_price, peak_extra_price, is_open,
+        current_wait_time, dynamic_enabled, avg_spend_yen, turnover_per_hour,
+        target_fastpass_per_hour, min_price, max_price, k_util, k_step, k_wait, k_env
+      `)
       .eq("id", storeId)
       .single();
 
@@ -58,12 +148,12 @@ serve(async (req) => {
       );
     }
 
-    // Calculate dynamic price
-    const peak = isPeakTime();
-    const unitPrice = store.fastpass_price + (peak ? store.peak_extra_price : 0);
+    // ★ get-price と同じダイナミックプライシングで価格計算
+    const storeData = store as Store;
+    const { unitPrice, dynamicFee } = await calcDynamicPrice(supabase, storeData);
     const totalAmount = unitPrice * quantity;
 
-    console.log(`Price calculated: unitPrice=${unitPrice}, total=${totalAmount}, peak=${peak}`);
+    console.log(`Price calculated: unitPrice=${unitPrice}, total=${totalAmount}, dynamicFee=${dynamicFee}, dynamic_enabled=${store.dynamic_enabled}`);
 
     // Initialize Stripe
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -109,7 +199,8 @@ serve(async (req) => {
         quantity: String(quantity),
         unitPrice: String(unitPrice),
         totalAmount: String(totalAmount),
-        isPeakTime: String(peak),
+        dynamicFee: String(dynamicFee),
+        basePrice: String(store.fastpass_price),
       },
     });
 

@@ -184,16 +184,39 @@ export default function TempTicket() {
 
     setProcessing(true);
 
+    // ★ TRACE: 購入フロー開始
+    const traceId = `TRACE_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    console.info(`[TRACE] start`, {
+      traceId,
+      facilityId,
+      quantity,
+      orderKey,
+      displayUnitPrice,
+      displayTotalPrice,
+      timestamp: new Date().toISOString(),
+    });
+
     try {
-      // ★ サーバーには facilityId, quantity, orderKey を送信（金額は送らない）
+      // ★ サーバーには facilityId, quantity, orderKey, traceId を送信（金額は送らない）
       // orderKey は冪等キーとして使用され、同じリクエストの再送を安全に処理
       const { data, error } = await supabase.functions.invoke("process-payment", {
         body: {
           facilityId,
           quantity,
           orderKey,
+          traceId,
           // userId は認証ヘッダーから取得されるため不要
         },
+      });
+
+      // ★ TRACE: サーバーレスポンス
+      console.info(`[TRACE] response`, {
+        traceId,
+        success: data?.success,
+        serverUnitPrice: data?.unitPrice,
+        serverTotalAmount: data?.totalAmount,
+        paymentIntentId: data?.paymentIntentId,
+        serverVersion: data?.version,
       });
 
       if (error) {

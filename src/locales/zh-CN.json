@@ -39,7 +39,7 @@
     "storeNotFound": "找不到店铺",
     "storeNotFoundDesc": "指定的店铺 ID 不存在。请确认网址。",
     "selectQuantity": "选择数量",
-    "quantityLimit": "SUGUKURU 每组限 6 人。",
+    "quantityLimit": "SUGUKURU 每组限 50 人。",
     "unitPrice": "单价",
     "subtotal": "小计",
     "total": "总计",
@@ -72,7 +72,11 @@
     "sendLink": "发送登录链接",
     "checkEmail": "请检查您的电子邮件",
     "linkSent": "已将登录链接发送至您的电子邮件",
-    "orContinueWith": "或继续使用"
+    "orContinueWith": "或继续使用",
+    "continueWithGoogle": "使用 Google 继续",
+    "continueWithX": "使用 X 继续",
+    "continueWithFacebook": "使用 Facebook 继续",
+    "continueWithApple": "使用 Apple 继续"
   },
   "cardSetup": {
     "title": "卡片注册",

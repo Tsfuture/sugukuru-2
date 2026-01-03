@@ -10,6 +10,7 @@ import Buy from "./pages/Buy";
 import Auth from "./pages/Auth";
 import AuthCallback from "./pages/AuthCallback";
 import CardSetup from "./pages/CardSetup";
+import CardChange from "./pages/CardChange";
 import TempTicket from "./pages/TempTicket";
 import Success from "./pages/Success";
 import Tokusho from "./pages/Tokusho";
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/card-setup" element={<CardSetup />} />
+            <Route path="/mypage/card" element={<CardChange />} />
             <Route path="/temp-ticket" element={<TempTicket />} />
             <Route path="/success" element={<Success />} />
             <Route path="/tokusho" element={<Tokusho />} />

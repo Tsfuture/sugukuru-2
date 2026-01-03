@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { getReturnTo, clearReturnTo } from "@/lib/returnTo";
 
 const AuthCallback = () => {
   const navigate = useNavigate();
@@ -11,12 +12,14 @@ const AuthCallback = () => {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // next パラメータを取得（デフォルトは /card-setup）
-        const nextParam = searchParams.get("next") ?? "/card-setup";
+        // returnTo を取得（URL next パラメータ → sessionStorage → デフォルト "/"）
+        const next = getReturnTo(searchParams, "/");
         
-        // next の安全対策: / から始まる内部パスのみ許可
-        const isValidNext = nextParam.startsWith("/") && !nextParam.startsWith("//");
-        const next = isValidNext ? nextParam : "/card-setup";
+        // 復帰先が決まったらsessionStorageをクリア
+        const navigateAndClear = (path: string) => {
+          clearReturnTo();
+          navigate(path, { replace: true });
+        };
 
         // code パラメータを確認（PKCE フロー）
         const code = searchParams.get("code");
@@ -30,7 +33,7 @@ const AuthCallback = () => {
             setIsProcessing(false);
             return;
           }
-          navigate(next, { replace: true });
+          navigateAndClear(next);
           return;
         }
 
@@ -52,7 +55,7 @@ const AuthCallback = () => {
               setIsProcessing(false);
               return;
             }
-            navigate(next, { replace: true });
+            navigateAndClear(next);
             return;
           }
         }
@@ -68,7 +71,7 @@ const AuthCallback = () => {
 
         if (session) {
           // 既にセッションがある場合は遷移
-          navigate(next, { replace: true });
+          navigateAndClear(next);
           return;
         }
 

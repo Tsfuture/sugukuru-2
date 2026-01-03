@@ -37,7 +37,7 @@ export default function MyPage() {
   };
 
   const handleChangeCard = () => {
-    navigate("/card-setup?redirect=/mypage");
+    navigate("/mypage/card");
   };
 
   if (loading) {

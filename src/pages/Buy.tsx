@@ -8,6 +8,8 @@ import { QuantitySelector } from "@/components/QuantitySelector";
 import { PriceDisplay } from "@/components/PriceDisplay";
 import { ConsentCheckbox, DEFAULT_CONSENT_ITEMS } from "@/components/ConsentCheckbox";
 import { formatPrice } from "@/lib/pricing";
+import { MAX_GROUP_SIZE } from "@/lib/constants";
+import { saveReturnTo } from "@/lib/returnTo";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, ArrowRight, ArrowUp, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
@@ -156,22 +158,21 @@ export default function Buy() {
 
     // Check if user is logged in
     if (!user) {
-      // Redirect to auth with return params
-      const params = new URLSearchParams({
-        store: storeId,
-        quantity: String(quantity),
-      });
-      navigate(`/auth?${params.toString()}`);
+      // 元のURLをsessionStorageに保存
+      saveReturnTo();
+      // 購入導線のURLをnextパラメータに含める
+      const currentUrl = `/buy?store=${storeId}&quantity=${quantity}`;
+      navigate(`/auth?next=${encodeURIComponent(currentUrl)}`);
       return;
     }
 
     // Check if user has payment method
     if (!profile?.has_payment_method) {
-      const params = new URLSearchParams({
-        store: storeId,
-        quantity: String(quantity),
-      });
-      navigate(`/card-setup?${params.toString()}`);
+      // 元のURLをsessionStorageに保存
+      saveReturnTo();
+      // カード登録後に戻る先をnextパラメータに含める
+      const returnUrl = `/temp-ticket?store=${storeId}&quantity=${quantity}&unitPrice=${unitPrice}`;
+      navigate(`/card-setup?store=${storeId}&quantity=${quantity}&next=${encodeURIComponent(returnUrl)}`);
       return;
     }
 
@@ -260,7 +261,7 @@ export default function Buy() {
             <QuantitySelector
               quantity={quantity} 
               onChange={setQuantity} 
-              maxQuantity={500}
+              maxQuantity={MAX_GROUP_SIZE}
               label={t('buy.selectQuantity')}
             />
             
@@ -392,7 +393,7 @@ export default function Buy() {
             <p className="font-bold text-sm text-destructive">！注意点！</p>
             <ul className="text-xs text-muted-foreground space-y-1">
               <li>* こちら優先的に案内されるチケットです。お食事代とは別になります。</li>
-              <li>* 1組6名様以上はご利用できません（1組6名様までSUGUKURUの利用ができます）</li>
+              <li>* 1組50名様以上はご利用できません（1組50名様までSUGUKURUの利用ができます）</li>
               <li>※SUGUKURU利用時にお席の指定はできません（空き次第のご案内になります）</li>
               <li>※SUGUKURUチケットの事前購入はできません（必ず来店してからご購入ください。スタッフが日時の確認を行います）</li>
               <li>※購入後、直ぐに店舗スタッフへチケットをご提示ください</li>

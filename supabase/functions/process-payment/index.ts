@@ -311,10 +311,14 @@ serve(async (req) => {
       );
     }
 
+    // ★ 購入枚数の上限定数（フロントエンドと統一: MAX_GROUP_SIZE = 50）
+    const MAX_GROUP_SIZE = 50;
+    const MIN_GROUP_SIZE = 1;
+
     const qty = Number(quantity);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 6) {
+    if (!Number.isInteger(qty) || qty < MIN_GROUP_SIZE || qty > MAX_GROUP_SIZE) {
       return new Response(
-        JSON.stringify({ error: "quantity must be an integer between 1 and 6", code: "INVALID_QUANTITY" }),
+        JSON.stringify({ error: `購入枚数は${MIN_GROUP_SIZE}〜${MAX_GROUP_SIZE}枚の範囲で指定してください`, code: "INVALID_QUANTITY" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

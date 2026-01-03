@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { buildAuthRedirectUrl, saveReturnToPath } from "@/lib/returnTo";
 
 interface Profile {
   id: string;
@@ -15,13 +16,16 @@ interface Profile {
   card_exp_year: number | null;
 }
 
+type OAuthProvider = 'google' | 'twitter' | 'facebook' | 'apple';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signInWithOtp: (email: string) => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  signInWithOtp: (email: string, returnTo?: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: (returnTo?: string) => Promise<{ error: Error | null }>;
+  signInWithOAuth: (provider: OAuthProvider, returnTo?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -91,24 +95,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithOtp = async (email: string) => {
+  // returnToを元にredirectToを生成するヘルパー
+  // returnTo ユーティリティを使用して、sessionStorage との連携も行う
+  const buildRedirectTo = (returnTo?: string): string => {
+    // returnToが指定された場合は sessionStorage にも保存
+    if (returnTo) {
+      saveReturnToPath(returnTo);
+    }
+    return buildAuthRedirectUrl(returnTo);
+  };
+
+  const signInWithOtp = async (email: string, returnTo?: string) => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/card-setup`,
+        emailRedirectTo: buildRedirectTo(returnTo),
       },
     });
     return { error: error as Error | null };
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithOAuth = async (provider: OAuthProvider, returnTo?: string) => {
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
+      provider,
       options: {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: buildRedirectTo(returnTo),
       },
     });
     return { error: error as Error | null };
+  };
+
+  const signInWithGoogle = async (returnTo?: string) => {
+    return signInWithOAuth('google', returnTo);
   };
 
   const signOut = async () => {
@@ -127,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         signInWithOtp,
         signInWithGoogle,
+        signInWithOAuth,
         signOut,
         refreshProfile,
       }}

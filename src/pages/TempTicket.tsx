@@ -221,9 +221,18 @@ export default function TempTicket() {
 
       if (error) {
         console.error("Payment API error:", error);
+        // エラーオブジェクトからメッセージを抽出
+        let errorMessage = "決済サーバーへの接続に失敗しました。ネットワークを確認してください。";
+        if (error.message) {
+          errorMessage = error.message;
+        }
+        // context内のerrorも確認
+        if (error.context?.error) {
+          errorMessage = error.context.error;
+        }
         toast({
           title: "決済API エラー",
-          description: "決済サーバーへの接続に失敗しました。ネットワークを確認してください。",
+          description: errorMessage,
           variant: "destructive",
         });
         return;
@@ -264,7 +273,7 @@ export default function TempTicket() {
             break;
           case "INVALID_QUANTITY":
             errorTitle = "数量エラー";
-            errorDescription = "購入枚数が不正です（1〜6枚）";
+            errorDescription = "購入枚数が不正です（1〜50枚）";
             break;
           case "STORE_ERROR":
             errorTitle = "施設エラー";
@@ -430,7 +439,7 @@ export default function TempTicket() {
 
         {/* Note */}
         <p className="text-xs text-center text-muted-foreground">
-          SUGUKURUご利用人数は1組6名様までです
+          SUGUKURUご利用人数は1組50名様までです
         </p>
       </div>
     </div>

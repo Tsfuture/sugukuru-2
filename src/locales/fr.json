@@ -39,7 +39,7 @@
     "storeNotFound": "Magasin introuvable",
     "storeNotFoundDesc": "L'ID du magasin spécifié n'existe pas. Veuillez vérifier l'URL.",
     "selectQuantity": "Sélectionner la quantité",
-    "quantityLimit": "SUGUKURU est limité à 6 personnes par groupe.",
+    "quantityLimit": "SUGUKURU est limité à 50 personnes par groupe.",
     "unitPrice": "Prix unitaire",
     "subtotal": "Sous-total",
     "total": "Total",
@@ -72,7 +72,11 @@
     "sendLink": "Envoyer le lien de connexion",
     "checkEmail": "Vérifiez votre e-mail",
     "linkSent": "Nous vous avons envoyé un lien de connexion",
-    "orContinueWith": "Ou continuer avec"
+    "orContinueWith": "Ou continuer avec",
+    "continueWithGoogle": "Continuer avec Google",
+    "continueWithX": "Continuer avec X",
+    "continueWithFacebook": "Continuer avec Facebook",
+    "continueWithApple": "Continuer avec Apple"
   },
   "cardSetup": {
     "title": "Enregistrement de carte",

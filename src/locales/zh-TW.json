@@ -39,7 +39,7 @@
     "storeNotFound": "找不到店舖",
     "storeNotFoundDesc": "指定的店舖 ID 不存在。請確認網址。",
     "selectQuantity": "選擇數量",
-    "quantityLimit": "SUGUKURU 每組限 6 人。",
+    "quantityLimit": "SUGUKURU 每組限 50 人。",
     "unitPrice": "單價",
     "subtotal": "小計",
     "total": "總計",
@@ -72,7 +72,11 @@
     "sendLink": "發送登入連結",
     "checkEmail": "請檢查您的電子郵件",
     "linkSent": "已將登入連結發送至您的電子郵件",
-    "orContinueWith": "或繼續使用"
+    "orContinueWith": "或繼續使用",
+    "continueWithGoogle": "使用 Google 繼續",
+    "continueWithX": "使用 X 繼續",
+    "continueWithFacebook": "使用 Facebook 繼續",
+    "continueWithApple": "使用 Apple 繼續"
   },
   "cardSetup": {
     "title": "卡片註冊",

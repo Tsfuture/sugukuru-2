@@ -151,8 +151,127 @@ Stripe Dashboard > Payments で `amount = ¥500` になっていることを確�
 Price calculation {"base":500,"extra":100,"unitPrice":600,"quantity":1,"total":600}
 ```
 
+---
+
+## 購入枚数上限テスト手順（MAX_GROUP_SIZE = 50）
+
+### 変更概要（2026-01-03 実施）
+
+購入枚数の上限を6枚から50枚に変更しました。
+
+**影響箇所:**
+- `supabase/functions/process-payment/index.ts` - バックエンド検証（1〜50枚）
+- `src/lib/constants.ts` - 定数定義 `MAX_GROUP_SIZE = 50`
+- `src/pages/Buy.tsx` - フロントエンド QuantitySelector の上限
+- `src/pages/TempTicket.tsx` - エラーメッセージ、フッター文言
+- `src/locales/*.json` - 全7言語の文言
+- `supabase/migrations/20260103000000_increase_quantity_limit_to_50.sql` - DB制約
+
+### テスト手順
+
+1. **フロントエンド確認**
+   ```sh
+   npm run dev
+   ```
+   - `/buy?store=<store_id>` にアクセス
+   - 数量セレクタで 1〜50 が選択可能なことを確認
+   - 51以上は選択できないことを確認
+
+2. **1枚での購入テスト**
+   - 数量1で購入フローを完了
+   - 決済が成功することを確認
+
+3. **7枚での購入テスト（以前は失敗していた）**
+   - 数量7で購入フローを完了
+   - 決済が成功することを確認（以前は「決済API エラー」が発生）
+
+4. **50枚での購入テスト**
+   - 数量50で購入フローを完了
+   - 決済が成功することを確認
+
+5. **51枚での拒否テスト（API直接呼び出し）**
+   ```sh
+   # Edge Function を直接呼び出して 51枚が拒否されることを確認
+   curl -X POST https://<project_ref>.supabase.co/functions/v1/process-payment \
+     -H "Authorization: Bearer <anon_key>" \
+     -H "Content-Type: application/json" \
+     -d '{"facilityId":"test-store","quantity":51,"orderKey":"test-key"}'
+   ```
+   - HTTP 400 + `{"error":"購入枚数は1〜50枚の範囲で指定してください","code":"INVALID_QUANTITY"}` が返ることを確認
+
+6. **DB制約の適用**
+   ```sh
+   # Supabase CLI でマイグレーションを実行
+   npx supabase db push
+   # または手動で SQL を実行
+   ```
+
 ### セキュリティ注意事項
 
 - `STRIPE_SECRET_KEY` は **絶対にフロントエンドに置かない**
 - `STRIPE_SECRET_KEY` を **ログに出力しない**
 - `.env.local` は **Gitにコミットしない**（.gitignoreで除外済み）
+
+---
+
+## 購入導線 returnTo 保持の仕組み（2026-01-03 実装）
+
+### 概要
+
+認証フロー（ログイン/新規登録/メール認証/カード登録）を経ても、元の購入導線（`/buy?store=xxx` や `/temp-ticket?store=xxx`）へ確実に戻るための仕組みです。
+
+### 保持方法
+
+1. **sessionStorage** - ブラウザセッション中は永続
+2. **URLクエリパラメータ（next）** - リダイレクト時に引き継ぎ
+
+### 復帰優先順
+
+1. URLの `next` パラメータ
+2. sessionStorage の `sugukuru_returnTo`
+3. デフォルト値（`/` またはカード未登録なら `/card-setup`）
+
+### 実装ファイル
+
+- `src/lib/returnTo.ts` - ユーティリティ関数（saveReturnTo, getReturnTo, clearReturnTo）
+- `src/pages/Buy.tsx` - 認証遷移前に `saveReturnTo()` を呼び出し
+- `src/pages/Auth.tsx` - `getReturnTo()` で復帰先を取得、OTP/OAuth に渡す
+- `src/hooks/useAuth.tsx` - `buildAuthRedirectUrl()` で認証リダイレクトURLを構築
+- `src/pages/AuthCallback.tsx` - 認証完了後に `getReturnTo()` → `clearReturnTo()` → navigate
+- `src/pages/CardSetup.tsx` - カード登録完了後に `getPostSetupRedirect()` → `clearReturnTo()` → navigate
+
+---
+
+## returnTo 動作確認 テスト手順
+
+### パターン1: 新規登録 → メール認証 → カード登録 → 購入完了
+
+1. シークレットウィンドウで `/buy?store=<store_id>&quantity=2` にアクセス
+2. 「購入へ進む」をタップ → `/auth` に遷移
+3. メールアドレスを入力して「認証メールを送信」
+4. 受信したメールのリンクをクリック → `/auth/callback?next=...` に遷移
+5. カード未登録なら `/card-setup` へ自動遷移
+6. カード情報を入力して「このカードを登録する」
+7. **期待結果**: `/temp-ticket?store=<store_id>&quantity=2&unitPrice=...` に遷移
+
+### パターン2: ログイン済み・カード未登録 → カード登録 → 購入完了
+
+1. ログイン済みだがカード未登録のアカウントで `/buy?store=<store_id>` にアクセス
+2. 「購入へ進む」をタップ → `/card-setup` に遷移
+3. カード情報を入力して「このカードを登録する」
+4. **期待結果**: 元の購入導線（`/temp-ticket?store=<store_id>...`）に遷移
+
+### パターン3: OAuth（Google等）ログイン → 購入完了
+
+1. シークレットウィンドウで `/buy?store=<store_id>` にアクセス
+2. 「購入へ進む」をタップ → `/auth` に遷移
+3. 「Googleで続行」をタップ → Google認証
+4. 認証完了後 `/auth/callback?next=...` → 必要に応じて `/card-setup` へ
+5. カード登録後 → **期待結果**: 元の `/temp-ticket?store=<store_id>...` に遷移
+
+### 確認ポイント
+
+- すべてのパターンで `store` パラメータが失われないこと
+- 「店舗が選択されていません」エラーが表示されないこと
+- UI/レイアウトに変更がないこと
+

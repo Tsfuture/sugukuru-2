@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { loadStripe } from "@stripe/stripe-js";
 import { 
   Elements, 
@@ -10,14 +10,13 @@ import {
   useElements 
 } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { calcDynamicPrice } from "@/lib/pricing";
-import { getReturnTo, clearReturnTo } from "@/lib/returnTo";
-import { CreditCard, Zap, User } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { CreditCard, Zap, User, ArrowLeft, CheckCircle } from "lucide-react";
 
 // Initialize Stripe with publishable key
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
@@ -39,8 +38,7 @@ const elementStyle = {
 };
 
 // Inner form component that uses Stripe hooks
-function CardSetupForm() {
-  const [searchParams] = useSearchParams();
+function CardChangeForm() {
   const navigate = useNavigate();
   const { user, profile, loading, refreshProfile } = useAuth();
   const stripe = useStripe();
@@ -51,59 +49,15 @@ function CardSetupForm() {
   const [loadingIntent, setLoadingIntent] = useState(false);
   const [cardholderName, setCardholderName] = useState("");
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   // 既に confirmCardSetup が成功した paymentMethodId を保持
   const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
 
-  const facilityId = searchParams.get("facility") || searchParams.get("store") || "";
-  const quantity = searchParams.get("quantity") || "1";
-
-  // returnTo: sessionStorage または URL から取得
-  // カード登録完了後の遷移先を決定
-  const getPostSetupRedirect = (): string => {
-    // まず sessionStorage / URL の returnTo を確認
-    const returnTo = getReturnTo(searchParams);
-    
-    // returnTo が "/" 以外（= 元のページが保存されている）ならそちらへ
-    if (returnTo && returnTo !== "/") {
-      return returnTo;
-    }
-    
-    // フォールバック: temp-ticket へ遷移（従来の挙動）
-    const params = new URLSearchParams();
-    const storeId = facilityId || "default";
-    params.set("store", storeId);
-    params.set("quantity", quantity || "1");
-    const unitPrice = calcDynamicPrice(storeId);
-    params.set("unitPrice", String(unitPrice));
-    return `/temp-ticket?${params.toString()}`;
-  };
-
-  const getRedirectUrl = () => {
-    const params = new URLSearchParams();
-    if (facilityId) params.set("facility", facilityId);
-    if (quantity) params.set("quantity", quantity);
-    return `/buy${params.toString() ? `?${params.toString()}` : ""}`;
-  };
-
-  // navigateAndClear: returnTo をクリアしてから遷移
-  const navigateToPostSetup = () => {
-    const redirectUrl = getPostSetupRedirect();
-    clearReturnTo();
-    navigate(redirectUrl);
-  };
-
   useEffect(() => {
     if (!loading && !user) {
-      navigate("/auth");
+      navigate("/auth?redirect=/mypage/card");
     }
   }, [user, loading, navigate]);
-
-  useEffect(() => {
-    // If user already has payment method, redirect to buy
-    if (!loading && profile?.has_payment_method) {
-      navigate(getRedirectUrl());
-    }
-  }, [profile, loading, navigate]);
 
   // Create SetupIntent function - 毎回新しいものを作成
   const createSetupIntent = async (): Promise<string | null> => {
@@ -148,7 +102,6 @@ function CardSetupForm() {
 
     if (error) {
       console.error("setup-card invocation error:", error);
-      // FunctionsHttpError の場合、error.context に詳細がある場合あり
       const errorMsg = error.message || "カード情報の保存に失敗しました";
       setSetupError(errorMsg);
       return false;
@@ -156,7 +109,6 @@ function CardSetupForm() {
 
     if (!data?.success) {
       console.error("setup-card returned error:", data);
-      // サーバーからのエラーメッセージを表示
       const errorDetail = data?.message || data?.error_code || "カード情報の保存に失敗しました";
       const details = data?.details ? ` (${data.details})` : "";
       setSetupError(`${errorDetail}${details}`);
@@ -187,15 +139,19 @@ function CardSetupForm() {
       // 既に confirmCardSetup が成功している場合は setup-card の再試行のみ
       if (confirmedPaymentMethodId) {
         console.log("Retrying setup-card with already confirmed paymentMethodId:", confirmedPaymentMethodId);
-        const success = await callSetupCard(confirmedPaymentMethodId);
-        if (success) {
+        const setupSuccess = await callSetupCard(confirmedPaymentMethodId);
+        if (setupSuccess) {
           await refreshProfile();
-          navigateToPostSetup();
+          setSuccess(true);
+          toast({
+            title: "カード情報を更新しました",
+            description: "新しいカードが登録されました。",
+          });
         }
         return;
       }
 
-      // 新しい SetupIntent を取得（既存のを再利用しない）
+      // 新しい SetupIntent を取得
       const secret = await createSetupIntent();
       if (!secret) {
         return;
@@ -223,7 +179,6 @@ function CardSetupForm() {
         if (stripeError.code === "setup_intent_unexpected_state") {
           console.log("SetupIntent unexpected state, checking current status...");
           
-          // 現在の SetupIntent 状態を確認
           const { setupIntent: existingIntent } = await stripe.retrieveSetupIntent(secret);
           
           if (existingIntent?.status === "succeeded" && existingIntent.payment_method) {
@@ -233,22 +188,24 @@ function CardSetupForm() {
               : existingIntent.payment_method.id;
             
             setConfirmedPaymentMethodId(pmId);
-            const success = await callSetupCard(pmId);
-            if (success) {
+            const setupSuccess = await callSetupCard(pmId);
+            if (setupSuccess) {
               await refreshProfile();
-              navigateToPostSetup();
+              setSuccess(true);
+              toast({
+                title: "カード情報を更新しました",
+                description: "新しいカードが登録されました。",
+              });
             }
             return;
           }
           
-          // succeeded でない場合は新しい SetupIntent で再試行を促す
           setClientSecret(null);
           setSetupError("カード登録の状態が不正です。もう一度お試しください。");
           return;
         }
 
         setSetupError(stripeError.message || "カード情報の確認に失敗しました");
-        // エラー時は clientSecret をクリアして次回新しいものを取得
         setClientSecret(null);
         return;
       }
@@ -258,16 +215,17 @@ function CardSetupForm() {
           ? setupIntent.payment_method
           : setupIntent.payment_method.id;
 
-        // confirmCardSetup 成功を記録
         setConfirmedPaymentMethodId(pmId);
 
-        // setup-card を呼び出し
-        const success = await callSetupCard(pmId);
-        if (success) {
+        const setupSuccess = await callSetupCard(pmId);
+        if (setupSuccess) {
           await refreshProfile();
-          navigateToPostSetup();
+          setSuccess(true);
+          toast({
+            title: "カード情報を更新しました",
+            description: "新しいカードが登録されました。",
+          });
         }
-        // 失敗時は confirmedPaymentMethodId が残っているので再試行可能
       } else {
         setSetupError("カード登録が完了しませんでした。もう一度お試しください。");
         setClientSecret(null);
@@ -289,6 +247,39 @@ function CardSetupForm() {
     );
   }
 
+  // 成功画面
+  if (success) {
+    return (
+      <div className="min-h-screen bg-background py-8 px-4">
+        <div className="max-w-md mx-auto space-y-6">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-4 py-2 text-sm font-medium">
+              <Zap className="w-4 h-4" />
+              SUGUKURU
+            </div>
+          </div>
+
+          <Card>
+            <CardContent className="pt-6 text-center space-y-4">
+              <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
+              <h2 className="text-xl font-bold">カード情報を更新しました</h2>
+              <p className="text-sm text-muted-foreground">
+                新しいカード情報が保存されました。<br />
+                次回のお支払いから新しいカードが使用されます。
+              </p>
+              <Button asChild className="w-full">
+                <Link to="/mypage">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  マイページに戻る
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background py-8 px-4">
       <div className="max-w-md mx-auto space-y-6">
@@ -298,18 +289,40 @@ function CardSetupForm() {
             <Zap className="w-4 h-4" />
             SUGUKURU
           </div>
-          <h1 className="text-2xl font-bold text-foreground">クレジットカード登録</h1>
+          <h1 className="text-2xl font-bold text-foreground">カード情報の変更</h1>
           <p className="text-sm text-muted-foreground">
-            安全にカード情報を登録して、スムーズな決済を実現
+            新しいカード情報を入力してください
           </p>
         </div>
+
+        {/* 現在のカード情報 */}
+        {profile?.has_payment_method && profile?.card_last4 && (
+          <Card className="bg-muted/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">現在のカード</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <span className="font-medium">
+                  {profile.card_brand || "カード"} •••• {profile.card_last4}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {profile.card_exp_month?.toString().padStart(2, "0")}/{profile.card_exp_year}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-primary" />
-              <CardTitle className="text-lg">お支払い情報</CardTitle>
+              <CardTitle className="text-lg">新しいカード情報</CardTitle>
             </div>
+            <CardDescription>
+              以下に新しいカード情報を入力してください
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -380,7 +393,6 @@ function CardSetupForm() {
                 </div>
               )}
 
-              {/* Spacer to maintain layout */}
               <div className="py-2" />
 
               <Button 
@@ -388,14 +400,24 @@ function CardSetupForm() {
                 className="w-full" 
                 disabled={submitting || !stripe || loadingIntent}
               >
-                {submitting || loadingIntent ? "登録中..." : "このカードを登録する"}
+                {submitting || loadingIntent ? "変更中..." : "カード情報を変更する"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
+        {/* 戻るボタン */}
+        <div className="text-center">
+          <Button variant="ghost" asChild className="text-muted-foreground">
+            <Link to="/mypage">
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              マイページに戻る
+            </Link>
+          </Button>
+        </div>
+
         <p className="text-xs text-center text-muted-foreground">
-          登録完了後、チケット購入画面に戻ります
+          ©︎ SUGUKURU ALL Rights Reserved.
         </p>
       </div>
     </div>
@@ -403,10 +425,10 @@ function CardSetupForm() {
 }
 
 // Main component wrapped with Stripe Elements provider
-export default function CardSetup() {
+export default function CardChange() {
   return (
     <Elements stripe={stripePromise}>
-      <CardSetupForm />
+      <CardChangeForm />
     </Elements>
   );
 }

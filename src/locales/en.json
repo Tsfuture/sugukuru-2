@@ -39,7 +39,7 @@
     "storeNotFound": "Store not found",
     "storeNotFoundDesc": "The specified store ID does not exist. Please check the URL.",
     "selectQuantity": "Select Quantity",
-    "quantityLimit": "SUGUKURU is limited to 6 people per group.",
+    "quantityLimit": "SUGUKURU is limited to 50 people per group.",
     "unitPrice": "Unit Price",
     "subtotal": "Subtotal",
     "total": "Total",
@@ -72,7 +72,11 @@
     "sendLink": "Send Login Link",
     "checkEmail": "Check your email",
     "linkSent": "We sent a login link to your email",
-    "orContinueWith": "Or continue with"
+    "orContinueWith": "Or continue with",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithX": "Continue with X",
+    "continueWithFacebook": "Continue with Facebook",
+    "continueWithApple": "Continue with Apple"
   },
   "cardSetup": {
     "title": "Card Registration",

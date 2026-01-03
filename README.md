@@ -156,3 +156,34 @@ Price calculation {"base":500,"extra":100,"unitPrice":600,"quantity":1,"total":6
 - `STRIPE_SECRET_KEY` は **絶対にフロントエンドに置かない**
 - `STRIPE_SECRET_KEY` を **ログに出力しない**
 - `.env.local` は **Gitにコミットしない**（.gitignoreで除外済み）
+
+---
+
+## Netlify デプロイ
+
+### ビルド設定
+
+- **Build command**: `npm run build`
+- **Publish directory**: `dist`
+
+### 必須環境変数（Netlify側で設定）
+
+Netlify の **Site settings > Environment variables** で以下を設定してください：
+
+| 変数名 | 説明 |
+|--------|------|
+| `VITE_SUPABASE_URL` | Supabase プロジェクトURL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase Anon Key（公開可能） |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe 公開キー（pk_live_... or pk_test_...） |
+
+⚠️ **注意**: Secret Key（sk_...）は Supabase Edge Functions の環境変数に設定します。Netlify には設定しないでください。
+
+### SPA ルーティング対応
+
+このリポジトリには SPA 用のリダイレクト設定が含まれています：
+
+- `netlify.toml` - Netlify ビルド設定 + リダイレクトルール
+- `public/_redirects` - フォールバック用リダイレクト設定
+
+これにより `/buy`、`/auth/callback` などのルートを直接アクセスまたはリロードしても 404 にならず、正しく表示されます。
+

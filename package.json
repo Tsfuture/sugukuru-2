@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 4173 --strictPort",
+    "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview --host 0.0.0.0 --port 4173 --strictPort"
+    "preview": "vite preview --host 0.0.0.0 --port 5173 --strictPort",
+    "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "onboard:facility": "tsx scripts/onboard-facility.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -64,16 +66,21 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "googleapis": "^144.0.0",
+    "qrcode": "^1.5.4",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@types/node": "^22.16.5",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "dotenv": "^16.4.5",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -83,6 +90,7 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
+    "tsx": "^4.19.2",
     "vite": "^5.4.19"
   }
 }

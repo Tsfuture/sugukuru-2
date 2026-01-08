@@ -97,7 +97,9 @@
   },
   "footer": {
     "tagline": "앱 필요 없음 - 브라우저 기반 - QR 코드로 간편 구매",
-    "tokushoLink": "특정상거래법 표기"
+    "tokushoLink": "특정상거래법 표기",
+    "termsLink": "이용약관",
+    "privacyLink": "개인정보처리방침"
   },
   "consent": {
     "noRefund": "취소 및 환불은 불가합니다",

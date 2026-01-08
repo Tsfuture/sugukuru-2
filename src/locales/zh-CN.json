@@ -97,7 +97,9 @@
   },
   "footer": {
     "tagline": "无需应用程序 - 浏览器即可完成 - 二维码轻松购买",
-    "tokushoLink": "特定商业交易法标示"
+    "tokushoLink": "特定商业交易法标示",
+    "termsLink": "使用条款",
+    "privacyLink": "隐私政策"
   },
   "consent": {
     "noRefund": "不接受取消或退款",

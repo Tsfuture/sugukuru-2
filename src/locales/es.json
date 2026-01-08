@@ -97,7 +97,9 @@
   },
   "footer": {
     "tagline": "Sin aplicación - Basado en navegador - Compra fácil con código QR",
-    "tokushoLink": "Aviso legal"
+    "tokushoLink": "Aviso legal",
+    "termsLink": "Términos de servicio",
+    "privacyLink": "Política de privacidad"
   },
   "consent": {
     "noRefund": "No se aceptan cancelaciones ni reembolsos",

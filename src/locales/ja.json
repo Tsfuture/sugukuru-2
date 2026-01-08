@@ -97,7 +97,9 @@
   },
   "footer": {
     "tagline": "アプリ不要・ブラウザで完結・QRコードで簡単購入",
-    "tokushoLink": "特定商取引法に基づく表記"
+    "tokushoLink": "特定商取引法に基づく表記",
+    "termsLink": "利用規約",
+    "privacyLink": "プライバシーポリシー"
   },
   "consent": {
     "noRefund": "キャンセル・返金は受け付けておりません",

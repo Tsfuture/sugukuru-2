@@ -147,9 +147,15 @@ export default function MyPage() {
 
       {/* フッター */}
       <footer className="py-8 px-4">
-        <div className="max-w-md mx-auto text-center">
+        <div className="max-w-md mx-auto text-center flex items-center justify-center gap-4">
           <Link to="/tokusho" className="text-xs text-muted-foreground hover:text-foreground underline">
             {t('footer.tokushoLink')}
+          </Link>
+          <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground underline">
+            {t('footer.termsLink')}
+          </Link>
+          <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground underline">
+            {t('footer.privacyLink')}
           </Link>
         </div>
       </footer>

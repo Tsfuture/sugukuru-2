@@ -97,7 +97,9 @@
   },
   "footer": {
     "tagline": "No app needed - Browser-based - Easy QR code purchase",
-    "tokushoLink": "Legal Notice"
+    "tokushoLink": "Legal Notice",
+    "termsLink": "Terms of Service",
+    "privacyLink": "Privacy Policy"
   },
   "consent": {
     "noRefund": "No cancellations or refunds accepted",

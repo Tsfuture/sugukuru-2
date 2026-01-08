@@ -97,7 +97,9 @@
   },
   "footer": {
     "tagline": "無需應用程式 - 瀏覽器即可完成 - QR 碼輕鬆購買",
-    "tokushoLink": "特定商業交易法標示"
+    "tokushoLink": "特定商業交易法標示",
+    "termsLink": "使用條款",
+    "privacyLink": "隱私權政策"
   },
   "consent": {
     "noRefund": "不接受取消或退款",

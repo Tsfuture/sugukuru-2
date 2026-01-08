@@ -32,3 +32,8 @@ dist-ssr
 *.pem
 *.key
 .env.*.local
+
+# Python virtual environments
+claude-env/
+.venv/
+venv/

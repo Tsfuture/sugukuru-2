@@ -412,7 +412,7 @@ export default function Buy() {
         
         {/* フッター */}
         <p className="text-xs text-center text-muted-foreground">
-          ©︎ SUGUKURU ALL Rights Reserved.
+          ©︎ SUGUKURU All Rights Reserved.
         </p>
       </div>
       

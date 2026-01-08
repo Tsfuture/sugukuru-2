@@ -16,13 +16,13 @@ export function validateSupabaseEnv(): { valid: boolean; missing: string[] } {
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(
-  SUPABASE_URL || '',
-  SUPABASE_ANON_KEY || '',
-  {
-  auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+// env不足時は null にし、createClient を呼ばない
+export const supabase = SUPABASE_URL && SUPABASE_ANON_KEY
+  ? createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        storage: localStorage,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
+  : null;

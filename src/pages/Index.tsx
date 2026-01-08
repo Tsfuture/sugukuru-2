@@ -275,7 +275,7 @@ export default function Index() {
         <div className="max-w-4xl mx-auto text-center space-y-4">
           <img src={sugukuruLogo} alt="SUGUKURU" className="h-8 mx-auto opacity-50" />
           <p className="text-sm text-muted-foreground">
-            ©︎ SUGUKURU ALL Rights Reserved.
+            ©︎ SUGUKURU All Rights Reserved.
           </p>
           <p className="text-xs text-muted-foreground">
             {t('footer.tagline')}
@@ -283,6 +283,12 @@ export default function Index() {
           <div className="pt-2 flex items-center justify-center gap-4">
             <Link to="/tokusho" className="text-xs text-muted-foreground hover:text-foreground underline">
               {t('footer.tokushoLink')}
+            </Link>
+            <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground underline">
+              {t('footer.termsLink')}
+            </Link>
+            <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground underline">
+              {t('footer.privacyLink')}
             </Link>
             <a href="https://mail.google.com/mail/?view=cm&fs=1&to=sugukuru.jp@gmail.com&su=%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B&body=%E6%9C%AC%E6%96%87%E3%82%92%E3%81%94%E8%A8%98%E5%85%A5%E3%81%8F%E3%81%A0%E3%81%95%E3%81%84" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground underline">
               {t('contact.title')}

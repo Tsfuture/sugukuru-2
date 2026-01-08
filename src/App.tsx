@@ -13,6 +13,8 @@ import CardSetup from "./pages/CardSetup";
 import TempTicket from "./pages/TempTicket";
 import Success from "./pages/Success";
 import Tokusho from "./pages/Tokusho";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 import MyPage from "./pages/MyPage";
 import NotFound from "./pages/NotFound";
 
@@ -38,6 +40,8 @@ const App = () => (
             <Route path="/temp-ticket" element={<TempTicket />} />
             <Route path="/success" element={<Success />} />
             <Route path="/tokusho" element={<Tokusho />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/mypage" element={<MyPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

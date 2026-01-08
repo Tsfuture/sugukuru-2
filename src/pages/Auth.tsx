@@ -316,7 +316,7 @@ export default function Auth() {
         </div>
 
         <p className="text-xs text-center text-muted-foreground">
-          ©︎ SUGUKURU ALL Rights Reserved.
+          ©︎ SUGUKURU All Rights Reserved.
         </p>
       </div>
     </div>

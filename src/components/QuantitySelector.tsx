@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Minus, Plus, Users } from "lucide-react";
+import { MAX_QUANTITY_PER_PURCHASE } from "@/lib/constants";
 
 interface QuantitySelectorProps {
   quantity: number;
@@ -16,7 +17,7 @@ export function QuantitySelector({
   quantity, 
   onChange, 
   min = 1, 
-  max = 500,
+  max = MAX_QUANTITY_PER_PURCHASE,
   maxQuantity,
   label = "人数を選択（代表者が人数分まとめて購入）"
 }: QuantitySelectorProps) {

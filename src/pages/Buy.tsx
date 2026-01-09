@@ -8,6 +8,7 @@ import { QuantitySelector } from "@/components/QuantitySelector";
 import { PriceDisplay } from "@/components/PriceDisplay";
 import { ConsentCheckbox, DEFAULT_CONSENT_ITEMS } from "@/components/ConsentCheckbox";
 import { formatPrice } from "@/lib/pricing";
+import { MAX_QUANTITY_PER_PURCHASE } from "@/lib/constants";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, ArrowRight, ArrowUp, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
@@ -260,7 +261,7 @@ export default function Buy() {
             <QuantitySelector
               quantity={quantity} 
               onChange={setQuantity} 
-              maxQuantity={500}
+              maxQuantity={MAX_QUANTITY_PER_PURCHASE}
               label={t('buy.selectQuantity')}
             />
             
@@ -270,7 +271,11 @@ export default function Buy() {
               <span>{t('buy.quantityLimit')}</span>
             </div>
 
-            <PriceDisplay unitPrice={unitPrice} quantity={quantity} />
+            {/* 
+              価格表示: 正規価格が確定するまで「読み込み中...」を表示
+              priceLoading中は誤った価格を一瞬でも表示しない
+            */}
+            <PriceDisplay unitPrice={unitPrice} quantity={quantity} isLoading={priceLoading} />
           </div>
         );
       
@@ -308,7 +313,7 @@ export default function Buy() {
               </div>
             </div>
             
-            <PriceDisplay unitPrice={unitPrice} quantity={quantity} showPeakBadge={false} />
+            <PriceDisplay unitPrice={unitPrice} quantity={quantity} showPeakBadge={false} isLoading={priceLoading} />
             
             <p className="text-xs text-muted-foreground text-center">
               {t('buy.ticketNote')}
@@ -376,10 +381,10 @@ export default function Buy() {
                 <Button
                   onClick={handlePurchase}
                   className="flex-1"
-                  disabled={authLoading}
+                  disabled={authLoading || priceLoading}
                 >
                   <Ticket className="w-4 h-4 mr-2" />
-                  {authLoading ? t('common.loading') : t('buy.secureTicket')}
+                  {authLoading || priceLoading ? t('common.loading') : t('buy.secureTicket')}
                 </Button>
               )}
             </div>
@@ -392,7 +397,7 @@ export default function Buy() {
             <p className="font-bold text-sm text-destructive">！注意点！</p>
             <ul className="text-xs text-muted-foreground space-y-1">
               <li>* こちら優先的に案内されるチケットです。お食事代とは別になります。</li>
-              <li>* 1組6名様以上はご利用できません（1組6名様までSUGUKURUの利用ができます）</li>
+              <li>* 1組50名様以上はご利用できません（1組50名様までSUGUKURUの利用ができます）</li>
               <li>※SUGUKURU利用時にお席の指定はできません（空き次第のご案内になります）</li>
               <li>※SUGUKURUチケットの事前購入はできません（必ず来店してからご購入ください。スタッフが日時の確認を行います）</li>
               <li>※購入後、直ぐに店舗スタッフへチケットをご提示ください</li>

@@ -407,7 +407,7 @@ export default function TempTicket() {
 
         {/* Note */}
         <p className="text-xs text-center text-muted-foreground">
-          SUGUKURUご利用人数は1組6名様までです
+          SUGUKURUご利用人数は1組50名様までです
         </p>
       </div>
     </div>

@@ -39,7 +39,7 @@
     "storeNotFound": "找不到店铺",
     "storeNotFoundDesc": "指定的店铺 ID 不存在。请确认网址。",
     "selectQuantity": "选择数量",
-    "quantityLimit": "SUGUKURU 每组限 6 人。",
+    "quantityLimit": "SUGUKURU 每组限 50 人。",
     "unitPrice": "单价",
     "subtotal": "小计",
     "total": "总计",

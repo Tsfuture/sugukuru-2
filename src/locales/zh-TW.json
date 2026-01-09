@@ -39,7 +39,7 @@
     "storeNotFound": "找不到店舖",
     "storeNotFoundDesc": "指定的店舖 ID 不存在。請確認網址。",
     "selectQuantity": "選擇數量",
-    "quantityLimit": "SUGUKURU 每組限 6 人。",
+    "quantityLimit": "SUGUKURU 每組限 50 人。",
     "unitPrice": "單價",
     "subtotal": "小計",
     "total": "總計",

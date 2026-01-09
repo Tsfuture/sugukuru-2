@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Users, ArrowRight, QrCode, TrendingUp, Loader2, Ticket, User } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Clock, Users, ArrowRight, QrCode, TrendingUp, Loader2, Ticket, User, Search, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
@@ -15,7 +16,19 @@ interface Store {
   description: string | null;
   fastpass_price: number;
   is_open: boolean;
+  category?: string; // カテゴリ（飲食/美容/クリニック等）
 }
+
+// カテゴリ定義（店舗検索用）
+const STORE_CATEGORIES = [
+  { id: "all", label: "すべて" },
+  { id: "restaurant", label: "飲食" },
+  { id: "beauty", label: "美容" },
+  { id: "clinic", label: "クリニック" },
+  { id: "other", label: "その他" },
+] as const;
+
+type CategoryId = typeof STORE_CATEGORIES[number]["id"];
 
 // get-price API response type
 interface GetPriceResponse {
@@ -50,6 +63,63 @@ export default function Index() {
   const [pricesLoading, setPricesLoading] = useState(false);
   const { user } = useAuth();
   const peak = isPeakTime();
+  
+  // 検索・フィルタリング用state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<CategoryId>("all");
+  
+  // フィルタリングされた店舗一覧（useMemoで最適化）
+  const filteredStores = useMemo(() => {
+    return stores.filter((store) => {
+      // テキスト検索（店名・説明に部分一致）
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch = !query || 
+        store.name.toLowerCase().includes(query) ||
+        (store.description?.toLowerCase().includes(query) ?? false);
+      
+      // カテゴリフィルタ（現在はcategoryフィールドがないため、descriptionから推測）
+      // 将来的にはDBにcategoryカラムを追加することを推奨
+      let matchesCategory = true;
+      if (selectedCategory !== "all") {
+        const desc = (store.description || "").toLowerCase();
+        const name = store.name.toLowerCase();
+        const combined = `${name} ${desc}`;
+        
+        switch (selectedCategory) {
+          case "restaurant":
+            matchesCategory = combined.includes("レストラン") || 
+                             combined.includes("restaurant") ||
+                             combined.includes("飲食") ||
+                             combined.includes("カフェ") ||
+                             combined.includes("居酒屋");
+            break;
+          case "beauty":
+            matchesCategory = combined.includes("美容") || 
+                             combined.includes("サロン") ||
+                             combined.includes("beauty") ||
+                             combined.includes("ヘア") ||
+                             combined.includes("ネイル");
+            break;
+          case "clinic":
+            matchesCategory = combined.includes("クリニック") || 
+                             combined.includes("clinic") ||
+                             combined.includes("病院") ||
+                             combined.includes("医院") ||
+                             combined.includes("歯科");
+            break;
+          case "other":
+            // 上記いずれにも該当しない場合
+            const isRestaurant = combined.includes("レストラン") || combined.includes("飲食") || combined.includes("カフェ");
+            const isBeauty = combined.includes("美容") || combined.includes("サロン");
+            const isClinic = combined.includes("クリニック") || combined.includes("病院");
+            matchesCategory = !isRestaurant && !isBeauty && !isClinic;
+            break;
+        }
+      }
+      
+      return matchesSearch && matchesCategory;
+    });
+  }, [stores, searchQuery, selectedCategory]);
 
   useEffect(() => {
     async function fetchStores() {
@@ -208,17 +278,65 @@ export default function Index() {
           <h2 className="text-2xl font-bold text-center text-foreground mb-2">
             {t('stores.title')}
           </h2>
-          <p className="text-center text-muted-foreground mb-8">
+          <p className="text-center text-muted-foreground mb-6">
             {t('stores.description')}
           </p>
+          
+          {/* 検索UI: 検索欄 + カテゴリボタン */}
+          <div className="space-y-4 mb-8">
+            {/* 検索入力欄 */}
+            <div className="relative max-w-md mx-auto">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="店舗名で検索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-10"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="検索クリア"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            
+            {/* カテゴリボタン（チップ/ピル型） */}
+            <div className="flex flex-wrap justify-center gap-2">
+              {STORE_CATEGORIES.map((cat) => (
+                <Button
+                  key={cat.id}
+                  variant={selectedCategory === cat.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className="rounded-full"
+                >
+                  {cat.label}
+                </Button>
+              ))}
+            </div>
+          </div>
           
           {loading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
+          ) : filteredStores.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">
+                {searchQuery || selectedCategory !== "all" 
+                  ? "該当する店舗が見つかりませんでした" 
+                  : "店舗がありません"}
+              </p>
+            </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stores.map((store) => (
+              {filteredStores.map((store) => (
                 <Card 
                   key={store.id} 
                   className={`hover:border-primary/50 transition-colors ${!store.is_open ? 'opacity-60' : ''}`}
@@ -245,17 +363,23 @@ export default function Index() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-start">
+                      {/* 
+                        価格表示: 正規価格が確定するまで「読み込み中...」を表示
+                        誤った価格（¥500...等）を一瞬でも表示しないためのA案実装
+                        - pricesLoading中はスケルトン的な「読み込み中...」を表示
+                        - dynamicPrices[store.id]が確定したら正規価格を表示
+                      */}
                       <span className="font-bold text-primary text-xl">
                         {pricesLoading && !dynamicPrices[store.id] 
-                          ? `${formatPrice(store.fastpass_price)}…` 
-                          : formatPrice(getDisplayPrice(store))}{t('stores.priceFrom')}
+                          ? t('common.loading')
+                          : `${formatPrice(getDisplayPrice(store))}${t('stores.priceFrom')}`}
                       </span>
                     </div>
                     <Button 
                       asChild 
                       className="w-full" 
                       size="sm"
-                      disabled={!store.is_open}
+                      disabled={!store.is_open || (pricesLoading && !dynamicPrices[store.id])}
                     >
                       <Link to={`/buy?store=${store.id}`}>
                         {t('stores.buyFastPass')}

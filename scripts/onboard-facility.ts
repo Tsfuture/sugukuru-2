@@ -11,12 +11,36 @@ import { google } from 'googleapis';
 config({ path: resolve(process.cwd(), '.env.local') });
 
 // ────────────────────────────────────────────────────────────
-// QR埋め込み位置/サイズ デフォルト値（pt単位）
-// 微調整後は以下の定数を書き換えるか、CLI引数で上書き可能
+// Cloudflare Pages 本番URL（QRコードのリンク先として使用）
+// 環境変数 CLOUDFLARE_PROD_ORIGIN で上書き可能
 // ────────────────────────────────────────────────────────────
-const DEFAULT_QR_SIZE_PT = 180; // QRコードサイズ（正方形）
-const DEFAULT_QR_X_PT = 207.75; // X座標（ページ幅 595.5 の中央寄せ: (595.5 - 180) / 2 ≒ 207.75）
-const DEFAULT_QR_Y_PT = 280;   // Y座標（PDF下端からの距離pt）
+const CLOUDFLARE_PROD_ORIGIN = process.env.CLOUDFLARE_PROD_ORIGIN || 'https://sugukuru-2.pages.dev';
+
+// ────────────────────────────────────────────────────────────
+// QR Safe Box 配置定数（pt単位）
+// "Purchase your FastPass here" テキスト下端〜SUGUKURUロゴ上端の
+// 安全領域内でQRを最大正方形で中央配置する方式
+// ────────────────────────────────────────────────────────────
+// [重要] テキストとの被りを完全に防ぐため、以下のルールに従う：
+// 1. SAFE_BOX_TOP_Y より上にQRは配置しない（テキスト領域）
+// 2. SAFE_BOX_BOTTOM_Y より下にQRは配置しない（ロゴ領域）
+// 3. 左右は SAFE_BOX_SIDE_MARGIN を確保
+// ────────────────────────────────────────────────────────────
+const PAGE_WIDTH_PT = 595.5;      // A4幅
+const PAGE_HEIGHT_PT = 842.25;    // A4高さ（参照用）
+
+// Safe Box 上端Y（PDF下端からの距離）
+// "Purchase your FastPass here" テキストの下端より十分下に設定
+// 実測値530ptから30pt下げて500ptを上限とする（フォント差吸収）
+const SAFE_BOX_TOP_Y_PT = 500;
+
+// Safe Box 下端Y（PDF下端からの距離）
+// SUGUKURUロゴ上端より十分上に設定
+// 実測値150ptから20pt上げて170ptを下限とする
+const SAFE_BOX_BOTTOM_Y_PT = 170;
+
+// Safe Box 左右マージン（ページ端からの距離）
+const SAFE_BOX_SIDE_MARGIN_PT = 80;
 
 // PDF メタデータ
 const PDF_TITLE = 'SUGUKURU スターターキット';
@@ -49,17 +73,14 @@ interface ParsedArgs {
   name: string;
   email: string;
   storeId?: string;
-  qrSize: number;
-  qrX?: number;
-  qrY: number;
+  qrSizeOverride?: number;  // オーバーライド用（通常は自動計算）
+  qrXOverride?: number;     // オーバーライド用
+  qrYOverride?: number;     // オーバーライド用
 }
 
 function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
-  const parsed: Partial<ParsedArgs> = {
-    qrSize: DEFAULT_QR_SIZE_PT,
-    qrY: DEFAULT_QR_Y_PT,
-  };
+  const parsed: Partial<ParsedArgs> = {};
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--name' && args[i + 1]) {
@@ -72,13 +93,13 @@ function parseArgs(): ParsedArgs {
       parsed.storeId = args[i + 1];
       i++;
     } else if (args[i] === '--qrSize' && args[i + 1]) {
-      parsed.qrSize = Number(args[i + 1]);
+      parsed.qrSizeOverride = Number(args[i + 1]);
       i++;
     } else if (args[i] === '--qrX' && args[i + 1]) {
-      parsed.qrX = Number(args[i + 1]);
+      parsed.qrXOverride = Number(args[i + 1]);
       i++;
     } else if (args[i] === '--qrY' && args[i + 1]) {
-      parsed.qrY = Number(args[i + 1]);
+      parsed.qrYOverride = Number(args[i + 1]);
       i++;
     }
   }
@@ -88,10 +109,10 @@ function parseArgs(): ParsedArgs {
     console.error('使用方法:');
     console.error('  npm run onboard:facility -- --name "施設名" --email "担当者メール" [--storeId "uuid"]');
     console.error('');
-    console.error('QR位置調整オプション:');
-    console.error('  --qrSize <pt>  QRコードサイズ（デフォルト: 180）');
-    console.error('  --qrX <pt>     X座標（デフォルト: 中央寄せ）');
-    console.error('  --qrY <pt>     Y座標（デフォルト: 280）');
+    console.error('QR位置調整オプション（通常は自動計算）:');
+    console.error('  --qrSize <pt>  QRコードサイズ（オーバーライド用）');
+    console.error('  --qrX <pt>     X座標（オーバーライド用）');
+    console.error('  --qrY <pt>     Y座標（オーバーライド用）');
     process.exit(1);
   }
 
@@ -174,12 +195,11 @@ async function main() {
   // A) 環境変数チェック
   checkEnvVars();
 
-  // 引数パース（QR位置オプション含む）
-  const { name, email, storeId, qrSize, qrX, qrY } = parseArgs();
+  // 引数パース
+  const { name, email, storeId, qrSizeOverride, qrXOverride, qrYOverride } = parseArgs();
   console.log(`📝 施設名: ${name}`);
   console.log(`📧 メール: ${email}`);
   if (storeId) console.log(`🏪 店舗ID: ${storeId}`);
-  console.log(`📐 QR設定: size=${qrSize}pt, x=${qrX ?? '中央寄せ'}, y=${qrY}pt`);
   console.log('');
 
   // B) Supabase接続
@@ -232,11 +252,13 @@ async function main() {
     console.log('✅ stores テーブルに登録しました\n');
   }
 
-  // C) buyUrl 生成（末尾スラッシュ除去）
+  // C) buyUrl 生成
+  // QRコードのリンク先はCloudflare Pages本番URLを使用
   // Buy.tsx は store パラメータを優先で読むため、store= を使用
-  const baseUrl = process.env.APP_BASE_URL!.replace(/\/$/, '');
-  const buyUrl = `${baseUrl}/buy?store=${facilityId}`;
-  console.log(`🔗 購入URL: ${buyUrl}`);
+  const qrBaseUrl = CLOUDFLARE_PROD_ORIGIN.replace(/\/$/, '');
+  const buyUrl = `${qrBaseUrl}/buy?store=${facilityId}`;
+  console.log(`🔗 購入URL（QRリンク先）: ${buyUrl}`);
+  console.log(`📍 Cloudflare本番URL: ${CLOUDFLARE_PROD_ORIGIN}`);
 
   // D) QR生成（PNG、透明背景）
   console.log('📱 QRコードを生成中（透明背景）...');
@@ -295,12 +317,46 @@ async function main() {
   const pages = pdfDoc.getPages();
   const firstPage = pages[0];
   const pageWidth = firstPage.getWidth();
+  const pageHeight = firstPage.getHeight();
 
-  // QR配置座標を計算（qrX未指定なら中央寄せ）
-  const finalQrX = qrX ?? (pageWidth - qrSize) / 2;
+  // ────────────────────────────────────────────────────────────
+  // QR Safe Box 配置ロジック
+  // [重要] テキストとの被りを完全に防ぐ固定ルール:
+  // - Safe Box上限: SAFE_BOX_TOP_Y_PT（QR上端はこれ以下）
+  // - Safe Box下限: SAFE_BOX_BOTTOM_Y_PT（QR下端はこれ以上）
+  // - 左右マージン: SAFE_BOX_SIDE_MARGIN_PT
+  // - この範囲内で最大正方形を中央配置
+  // ────────────────────────────────────────────────────────────
+  
+  // Safe Box の縦幅（上限Y - 下限Y）
+  const safeBoxHeight = SAFE_BOX_TOP_Y_PT - SAFE_BOX_BOTTOM_Y_PT;
+  
+  // Safe Box の横幅（ページ幅 - 左右マージン×2）
+  const safeBoxWidth = pageWidth - (2 * SAFE_BOX_SIDE_MARGIN_PT);
+  
+  // 最大正方形サイズ = min(横幅, 縦幅)（オーバーライドがあればそちらを使用）
+  const qrSize = qrSizeOverride ?? Math.min(safeBoxWidth, safeBoxHeight);
+  
+  // X座標: Safe Box内で水平中央
+  // boxLeft = SAFE_BOX_SIDE_MARGIN_PT
+  // x = boxLeft + (boxWidth - size) / 2
+  const qrX = qrXOverride ?? (SAFE_BOX_SIDE_MARGIN_PT + (safeBoxWidth - qrSize) / 2);
+  
+  // Y座標: Safe Box内で垂直中央
+  // boxBottom = SAFE_BOX_BOTTOM_Y_PT
+  // y = boxBottom + (boxHeight - size) / 2
+  const qrY = qrYOverride ?? (SAFE_BOX_BOTTOM_Y_PT + (safeBoxHeight - qrSize) / 2);
+  
+  console.log(`📐 QR Safe Box 配置計算:`);
+  console.log(`   - ページサイズ: ${pageWidth.toFixed(1)} x ${pageHeight.toFixed(1)} pt`);
+  console.log(`   - Safe Box 上限Y: ${SAFE_BOX_TOP_Y_PT} pt（これより上はテキスト領域）`);
+  console.log(`   - Safe Box 下限Y: ${SAFE_BOX_BOTTOM_Y_PT} pt（これより下はロゴ領域）`);
+  console.log(`   - Safe Box サイズ: ${safeBoxWidth.toFixed(1)} x ${safeBoxHeight.toFixed(1)} pt`);
+  console.log(`   - QRサイズ: ${qrSize.toFixed(1)} pt (正方形)`);
+  console.log(`   - QR配置: x=${qrX.toFixed(1)}, y=${qrY.toFixed(1)}`);
 
   firstPage.drawImage(qrImage, {
-    x: finalQrX,
+    x: qrX,
     y: qrY,
     width: qrSize,
     height: qrSize,
@@ -308,7 +364,7 @@ async function main() {
 
   const pdfBytes = await pdfDoc.save();
   const pdfBuffer = Buffer.from(pdfBytes);
-  console.log(`✅ PDF生成完了（QR: x=${finalQrX.toFixed(1)}, y=${qrY}, size=${qrSize}）\n`);
+  console.log(`✅ PDF生成完了\n`);
 
   // G) Storage にPDFアップロード
   console.log('☁️  PDFをSupabase Storageにアップロード中...');

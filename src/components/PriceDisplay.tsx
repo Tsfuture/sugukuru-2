@@ -1,16 +1,55 @@
 import { formatPrice, isPeakTime } from "@/lib/pricing";
 import { Badge } from "@/components/ui/badge";
-import { Clock, TrendingUp } from "lucide-react";
+import { Clock, TrendingUp, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface PriceDisplayProps {
   unitPrice: number;
   quantity: number;
   showPeakBadge?: boolean;
+  /** 価格読み込み中かどうか。trueの場合はスケルトン表示 */
+  isLoading?: boolean;
 }
 
-export function PriceDisplay({ unitPrice, quantity, showPeakBadge = true }: PriceDisplayProps) {
+/**
+ * 価格表示コンポーネント
+ * - isLoading=true: 「読み込み中...」を表示（誤った価格を一瞬でも出さない）
+ * - isLoading=false: 正規価格を表示
+ */
+export function PriceDisplay({ unitPrice, quantity, showPeakBadge = true, isLoading = false }: PriceDisplayProps) {
+  const { t } = useTranslation();
   const total = unitPrice * quantity;
   const peak = isPeakTime();
+
+  // 価格読み込み中は「読み込み中...」を表示
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">単価</span>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-xl font-bold">{t('common.loading')}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">人数</span>
+          <span className="text-lg font-medium text-foreground">{quantity}名</span>
+        </div>
+
+        <div className="border-t border-border pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-lg font-medium text-foreground">合計金額</span>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-2xl font-bold">{t('common.loading')}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

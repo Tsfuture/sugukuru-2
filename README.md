@@ -405,3 +405,56 @@ npm run onboard:facility -- --name "施設名" --email "xxx@example.com" \
    - `APP_BASE_URL` を本番URLに変更（Cloudflare Pages等）
 4. **Cloudflare Pages移行時**: `APP_BASE_URL=https://your-project.pages.dev`
 
+---
+
+## 技術ガイドライン
+
+### 環境変数（URL設定）
+
+| 変数名 | 用途 | デフォルト値 |
+|--------|------|-------------|
+| `VITE_PUBLIC_APP_URL` | フロントエンド用本番URL | `https://sugukuru-2.pages.dev` |
+| `CLOUDFLARE_PROD_ORIGIN` | QRコードのリンク先URL（scripts用） | `https://sugukuru-2.pages.dev` |
+
+Netlifyは使用せず、Cloudflare Pagesの本番URLに統一しています。
+
+### QR Safe Box 方式（PDF生成）
+
+スターターキットPDFのQRコード配置は「Safe Box」方式で固定座標計算を行っています：
+
+```
+SAFE_BOX_TOP_Y_PT = 500    # QR上端の上限（テキスト下30ptマージン）
+SAFE_BOX_BOTTOM_Y_PT = 170 # QR下端の下限（ロゴ上20ptマージン）
+SAFE_BOX_SIDE_MARGIN_PT = 80
+```
+
+この範囲内で最大正方形を中央配置することで、テキストやロゴとの被りを防止しています。
+
+### 購入枚数上限
+
+```typescript
+// src/lib/constants.ts
+export const MAX_QUANTITY_PER_PURCHASE = 50;
+```
+
+全てのUI/バリデーションでこの定数を参照しています。変更する場合はここを編集するだけでOKです。
+
+### 価格表示のローディング
+
+価格表示は「正規価格が確定するまで読み込み中表示」を徹底しています：
+
+- `Index.tsx`: `pricesLoading` 中は「読み込み中...」を表示
+- `Buy.tsx`: `priceLoading` 中は PriceDisplay に `isLoading={true}` を渡す
+- 購入ボタンは価格ローディング中は disabled
+
+これにより、誤った価格（¥500...等）を一瞬でも表示することを防いでいます。
+
+### 導入店舗の検索UI
+
+トップページの導入店舗一覧には以下の検索機能があります：
+
+1. **テキスト検索**: 店舗名・説明に部分一致
+2. **カテゴリフィルタ**: 飲食/美容/クリニック/その他
+
+カテゴリは現在description/nameからの推測で分類していますが、将来的にはDBにcategoryカラムを追加することを推奨します。
+

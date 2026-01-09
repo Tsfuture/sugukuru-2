@@ -39,7 +39,7 @@
     "storeNotFound": "Magasin introuvable",
     "storeNotFoundDesc": "L'ID du magasin spécifié n'existe pas. Veuillez vérifier l'URL.",
     "selectQuantity": "Sélectionner la quantité",
-    "quantityLimit": "SUGUKURU est limité à 6 personnes par groupe.",
+    "quantityLimit": "SUGUKURU est limité à 50 personnes par groupe.",
     "unitPrice": "Prix unitaire",
     "subtotal": "Sous-total",
     "total": "Total",

@@ -39,7 +39,7 @@
     "storeNotFound": "店舗が見つかりません",
     "storeNotFoundDesc": "指定されたIDの店舗が存在しません。URLをご確認ください。",
     "selectQuantity": "購入枚数を選択",
-    "quantityLimit": "SUGUKURUご利用人数は1組6名様までです。",
+    "quantityLimit": "SUGUKURUご利用人数は1組50名様までです。",
     "unitPrice": "単価",
     "subtotal": "小計",
     "total": "合計",

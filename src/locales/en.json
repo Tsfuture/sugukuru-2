@@ -39,7 +39,7 @@
     "storeNotFound": "Store not found",
     "storeNotFoundDesc": "The specified store ID does not exist. Please check the URL.",
     "selectQuantity": "Select Quantity",
-    "quantityLimit": "SUGUKURU is limited to 6 people per group.",
+    "quantityLimit": "SUGUKURU is limited to 50 people per group.",
     "unitPrice": "Unit Price",
     "subtotal": "Subtotal",
     "total": "Total",

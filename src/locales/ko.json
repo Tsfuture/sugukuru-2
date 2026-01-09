@@ -39,7 +39,7 @@
     "storeNotFound": "매장을 찾을 수 없습니다",
     "storeNotFoundDesc": "지정된 매장 ID가 존재하지 않습니다. URL을 확인해 주세요.",
     "selectQuantity": "수량 선택",
-    "quantityLimit": "SUGUKURU는 1그룹 최대 6명까지 이용 가능합니다.",
+    "quantityLimit": "SUGUKURU는 1그룹 최대 50명까지 이용 가능합니다.",
     "unitPrice": "단가",
     "subtotal": "소계",
     "total": "합계",

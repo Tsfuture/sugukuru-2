@@ -47,7 +47,7 @@ export default function Tokusho() {
 
             <section className="space-y-2">
               <h2 className="text-lg font-semibold border-b border-border pb-2">責任者</h2>
-              <p className="text-muted-foreground">代表取締役　古賀大翔</p>
+              <p className="text-muted-foreground">代表取締役 古賀大翔</p>
             </section>
 
             <section className="space-y-2">

@@ -14,6 +14,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, ArrowRight, ArrowUp, Ticket, MapPin, Clock, AlertTriangle, Loader2, Home } from "lucide-react";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
 
+// デバッグログ（開発環境のみ）
+const isDev = import.meta.env.MODE !== "production";
+const debugLog = (...args: unknown[]) => {
+  if (isDev) console.log("[Buy]", ...args);
+};
+
 type StoreRow = {
   id: string;
   name: string;
@@ -21,6 +27,29 @@ type StoreRow = {
   fastpass_price: number;
   is_open: boolean;
 };
+
+// facilities テーブルから取得する型
+type FacilityRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  min_price_yen: number | null;
+  max_price_yen: number | null;
+  is_published: boolean;
+};
+
+// facilities を StoreRow 互換に変換
+function facilityToStoreRow(facility: FacilityRow): StoreRow {
+  return {
+    id: facility.id,
+    name: facility.name,
+    description: facility.description,
+    // min_price_yen を fastpass_price として使用（なければ0）
+    fastpass_price: facility.min_price_yen ?? 0,
+    // is_published を is_open として扱う
+    is_open: facility.is_published,
+  };
+}
 
 // get-price API response type
 interface GetPriceResponse {
@@ -44,14 +73,21 @@ interface GetPriceResponse {
   slot_id: string;
 }
 
+// 施設ステータス（RPC get_facility_status の返却型）
+interface FacilityStatus {
+  code: "OK" | "SOLD_OUT" | "NOT_FOUND";
+  is_open: boolean;
+  next_open_at: string | null;
+}
+
 export default function Buy() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
   
-  // URLから店舗IDを取得（store優先、互換でfacilityも読む）
-  const storeId = searchParams.get("store") || searchParams.get("facility");
+  // URLから店舗IDを取得（facilityId優先、互換でstore/facilityも読む）
+  const storeId = searchParams.get("facilityId") || searchParams.get("store") || searchParams.get("facility");
   
   // Supabaseからstore取得
   const [store, setStore] = useState<StoreRow | null>(null);
@@ -61,39 +97,117 @@ export default function Buy() {
   // ダイナミック価格の状態
   const [dynamicPrice, setDynamicPrice] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
+  
+  // 施設ステータス（営業時間判定）
+  const [facilityStatus, setFacilityStatus] = useState<FacilityStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
 
+  // 店舗データ取得：facilities優先 → stores フォールバック
   useEffect(() => {
     async function fetchStore() {
-      if (!storeId) {
+      if (!storeId || !supabase) {
         setLoadingStore(false);
         return;
       }
       setLoadingStore(true);
       setStoreError(null);
 
-      const { data, error } = await supabase
+      debugLog("Fetching store data for ID:", storeId);
+
+      // まず facilities テーブルを試す
+      const { data: facilityData, error: facilityError } = await supabase
+        .from("facilities")
+        .select("id,name,description,min_price_yen,max_price_yen,is_published")
+        .eq("id", storeId)
+        .single();
+
+      if (!facilityError && facilityData) {
+        debugLog("Found in facilities:", facilityData);
+        setStore(facilityToStoreRow(facilityData as FacilityRow));
+        setLoadingStore(false);
+        return;
+      }
+
+      debugLog("Not found in facilities, trying stores by id...");
+
+      // facilities になければ stores を試す（既存互換: id で検索）
+      const { data: storeById, error: storeByIdError } = await supabase
         .from("stores")
         .select("id,name,description,fastpass_price,is_open")
         .eq("id", storeId)
         .single();
 
-      if (error) {
-        console.error("Store fetch error:", error);
-        setStoreError("店舗情報の取得に失敗しました");
-        setStore(null);
-      } else {
-        setStore(data as StoreRow);
+      if (!storeByIdError && storeById) {
+        debugLog("Found in stores by id:", storeById);
+        setStore(storeById as StoreRow);
+        setLoadingStore(false);
+        return;
       }
+
+      debugLog("Not found in stores by id, trying by facility_id...");
+
+      // stores.facility_id で検索（新規オンボード施設向け）
+      const { data: storeByFacilityId, error: storeByFacilityIdError } = await supabase
+        .from("stores")
+        .select("id,name,description,fastpass_price,is_open")
+        .eq("facility_id", storeId)
+        .single();
+
+      if (!storeByFacilityIdError && storeByFacilityId) {
+        debugLog("Found in stores by facility_id:", storeByFacilityId);
+        setStore(storeByFacilityId as StoreRow);
+        setLoadingStore(false);
+        return;
+      }
+
+      // どれでも見つからなかった場合
+      if (isDev) {
+        console.warn("[Buy] Store not found for facilityId:", storeId, {
+          facilitiesError: facilityError?.message,
+          storeByIdError: storeByIdError?.message,
+          storeByFacilityIdError: storeByFacilityIdError?.message,
+        });
+      }
+      setStoreError("店舗情報の取得に失敗しました");
+      setStore(null);
       setLoadingStore(false);
     }
 
     fetchStore();
   }, [storeId]);
 
+  // 施設ステータスを取得（営業時間判定）
+  useEffect(() => {
+    async function fetchFacilityStatus() {
+      if (!storeId || !supabase) return;
+      
+      setStatusLoading(true);
+      try {
+        const { data, error } = await supabase.rpc('get_facility_status', {
+          p_facility_id: storeId,
+        });
+        
+        if (!error && data) {
+          setFacilityStatus(data as FacilityStatus);
+        } else {
+          // RPC がない場合はデフォルト値（営業中）
+          setFacilityStatus({ code: "OK", is_open: true, next_open_at: null });
+        }
+      } catch (err) {
+        console.error("get_facility_status error:", err);
+        setFacilityStatus({ code: "OK", is_open: true, next_open_at: null });
+      } finally {
+        setStatusLoading(false);
+      }
+    }
+
+    fetchFacilityStatus();
+  }, [storeId]);
+
   // get-price APIからダイナミック価格を取得
   useEffect(() => {
     async function fetchDynamicPrice() {
-      if (!storeId || !store) return;
+      if (!storeId || !store || !supabase) return;
       
       setPriceLoading(true);
       try {
@@ -118,6 +232,25 @@ export default function Buy() {
 
     fetchDynamicPrice();
   }, [storeId, store]);
+
+  // 営業時間外かどうか
+  const isClosed = facilityStatus?.code === "SOLD_OUT" || facilityStatus?.is_open === false;
+  
+  // 次の営業開始時刻のフォーマット
+  const formatNextOpenAt = (dateStr: string | null): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString("ja-JP", {
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "";
+    }
+  };
 
   // 価格: dynamicPrice があればそれを使用、なければ fastpass_price にフォールバック
   const unitPrice = dynamicPrice ?? store?.fastpass_price ?? 0;
@@ -346,6 +479,23 @@ export default function Buy() {
           </CardHeader>
         </Card>
         
+        {/* 営業時間外の警告メッセージ */}
+        {isClosed && !statusLoading && (
+          <Card className="border-destructive/50 bg-destructive/5">
+            <CardContent className="pt-4 space-y-2">
+              <div className="flex items-center gap-2 text-destructive">
+                <Clock className="w-5 h-5" />
+                <span className="font-bold">現在は営業時間外のため購入できません</span>
+              </div>
+              {facilityStatus?.next_open_at && (
+                <p className="text-sm text-muted-foreground">
+                  次の営業開始: {formatNextOpenAt(facilityStatus.next_open_at)}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        
         {/* メインカード */}
         <Card>
           <CardHeader>
@@ -371,7 +521,7 @@ export default function Buy() {
               {step < 3 ? (
                 <Button
                   onClick={() => setStep(step + 1)}
-                  disabled={step === 2 && !allConsented}
+                  disabled={(step === 2 && !allConsented) || isClosed}
                   className="flex-1"
                 >
                   {t('common.next')}
@@ -381,10 +531,12 @@ export default function Buy() {
                 <Button
                   onClick={handlePurchase}
                   className="flex-1"
-                  disabled={authLoading || priceLoading}
+                  disabled={authLoading || priceLoading || isClosed}
                 >
                   <Ticket className="w-4 h-4 mr-2" />
-                  {authLoading || priceLoading ? t('common.loading') : t('buy.secureTicket')}
+                  {isClosed 
+                    ? "営業時間外" 
+                    : (authLoading || priceLoading ? t('common.loading') : t('buy.secureTicket'))}
                 </Button>
               )}
             </div>

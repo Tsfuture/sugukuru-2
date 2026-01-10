@@ -58,7 +58,7 @@ serve(async (req) => {
     });
 
     // Get or create Stripe customer
-    let { data: profile } = await supabase
+    const { data: profile } = await supabase
       .from("profiles")
       .select("stripe_customer_id")
       .eq("id", user.id)

@@ -16,7 +16,21 @@ interface Store {
   description: string | null;
   fastpass_price: number;
   is_open: boolean;
-  category?: string; // カテゴリ（飲食/美容/クリニック等）
+  category?: string;
+  facility_id?: string | null; // facilities テーブルへの参照
+}
+
+// 施設ステータス（RPC get_facility_status の返却型）
+interface FacilityStatus {
+  code: "OK" | "SOLD_OUT" | "NOT_FOUND";
+  is_open: boolean;
+  next_open_at: string | null;
+}
+
+// 代表写真用
+interface FacilityPhoto {
+  url: string;
+  alt: string | null;
 }
 
 // カテゴリ定義（店舗検索用）
@@ -64,6 +78,13 @@ export default function Index() {
   const { user } = useAuth();
   const peak = isPeakTime();
   
+  // 施設ステータス（営業時間判定用）
+  const [facilityStatuses, setFacilityStatuses] = useState<Record<string, FacilityStatus>>({});
+  const [statusesLoading, setStatusesLoading] = useState(false);
+  
+  // 施設写真
+  const [facilityPhotos, setFacilityPhotos] = useState<Record<string, FacilityPhoto>>({});
+  
   // 検索・フィルタリング用state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>("all");
@@ -109,10 +130,12 @@ export default function Index() {
             break;
           case "other":
             // 上記いずれにも該当しない場合
-            const isRestaurant = combined.includes("レストラン") || combined.includes("飲食") || combined.includes("カフェ");
-            const isBeauty = combined.includes("美容") || combined.includes("サロン");
-            const isClinic = combined.includes("クリニック") || combined.includes("病院");
-            matchesCategory = !isRestaurant && !isBeauty && !isClinic;
+            {
+              const isRestaurant = combined.includes("レストラン") || combined.includes("飲食") || combined.includes("カフェ");
+              const isBeauty = combined.includes("美容") || combined.includes("サロン");
+              const isClinic = combined.includes("クリニック") || combined.includes("病院");
+              matchesCategory = !isRestaurant && !isBeauty && !isClinic;
+            }
             break;
         }
       }
@@ -123,10 +146,14 @@ export default function Index() {
 
   useEffect(() => {
     async function fetchStores() {
+      if (!supabase) {
+        setLoading(false);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from("stores")
-          .select("id, name, description, fastpass_price, is_open")
+          .select("id, name, description, fastpass_price, is_open, facility_id")
           .order("name");
 
         if (error) {
@@ -145,10 +172,82 @@ export default function Index() {
     fetchStores();
   }, []);
 
+  // 施設ステータスを取得（営業時間判定）
+  useEffect(() => {
+    async function fetchFacilityStatuses() {
+      if (!supabase || stores.length === 0) return;
+      
+      setStatusesLoading(true);
+      const statuses: Record<string, FacilityStatus> = {};
+      
+      // 並列でget_facility_status RPCを呼び出し
+      const statusPromises = stores.map(async (store) => {
+        // facility_id があればそれを使用、なければ store.id を使用
+        const facilityId = store.facility_id || store.id;
+        try {
+          const { data, error } = await supabase.rpc('get_facility_status', {
+            p_facility_id: facilityId,
+          });
+          
+          if (!error && data) {
+            statuses[store.id] = data as FacilityStatus;
+          }
+        } catch (err) {
+          console.error(`get_facility_status error for ${store.id}:`, err);
+          // RPC がない場合はデフォルト値（営業中）
+          statuses[store.id] = { code: "OK", is_open: true, next_open_at: null };
+        }
+      });
+      
+      await Promise.all(statusPromises);
+      setFacilityStatuses(statuses);
+      setStatusesLoading(false);
+    }
+
+    fetchFacilityStatuses();
+  }, [stores]);
+
+  // 施設写真を取得
+  useEffect(() => {
+    async function fetchFacilityPhotos() {
+      if (!supabase || stores.length === 0) return;
+      
+      const facilityIds = stores
+        .map(s => s.facility_id || s.id)
+        .filter((id): id is string => !!id);
+      
+      if (facilityIds.length === 0) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('facility_photos')
+          .select('facility_id, url, alt')
+          .in('facility_id', facilityIds)
+          .eq('sort_order', 0); // 代表写真のみ
+
+        if (!error && data) {
+          const photos: Record<string, FacilityPhoto> = {};
+          for (const photo of data) {
+            // facility_id から store.id へのマッピング
+            const store = stores.find(s => (s.facility_id || s.id) === photo.facility_id);
+            if (store) {
+              photos[store.id] = { url: photo.url, alt: photo.alt };
+            }
+          }
+          setFacilityPhotos(photos);
+        }
+      } catch (err) {
+        console.error('Facility photos fetch error:', err);
+      }
+    }
+
+    fetchFacilityPhotos();
+  }, [stores]);
+
   // 各店舗のダイナミック価格を並列取得
   useEffect(() => {
     async function fetchDynamicPrices() {
-      if (stores.length === 0) return;
+      if (!supabase || stores.length === 0) return;
       
       setPricesLoading(true);
       const prices: Record<string, number> = {};
@@ -180,6 +279,24 @@ export default function Index() {
   // 店舗の表示価格を取得（ダイナミック価格があればそれを、なければfastpass_priceを使用）
   const getDisplayPrice = (store: Store): number => {
     return dynamicPrices[store.id] ?? store.fastpass_price;
+  };
+
+  // 店舗が営業中かどうか（facility_statusを優先、なければis_openを使用）
+  const isStoreOpen = (store: Store): boolean => {
+    const status = facilityStatuses[store.id];
+    if (status) {
+      return status.is_open;
+    }
+    return store.is_open;
+  };
+
+  // 店舗が営業時間外（=完売表示）かどうか
+  const isSoldOut = (store: Store): boolean => {
+    const status = facilityStatuses[store.id];
+    if (status) {
+      return status.code === "SOLD_OUT";
+    }
+    return !store.is_open;
   };
   
   return (
@@ -336,59 +453,99 @@ export default function Index() {
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredStores.map((store) => (
-                <Card 
-                  key={store.id} 
-                  className={`hover:border-primary/50 transition-colors ${!store.is_open ? 'opacity-60' : ''}`}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          {store.name}
-                          {!store.is_open && (
-                            <Badge variant="secondary" className="text-xs">
-                              {t('stores.closed')}
+              {filteredStores.map((store) => {
+                const soldOut = isSoldOut(store);
+                const photo = facilityPhotos[store.id];
+                
+                return (
+                  <Card 
+                    key={store.id} 
+                    className={`hover:border-primary/50 transition-colors relative overflow-hidden ${soldOut ? 'opacity-60' : ''}`}
+                  >
+                    {/* 代表写真（あれば表示） */}
+                    {photo && (
+                      <div className="relative h-32 overflow-hidden">
+                        <img 
+                          src={photo.url} 
+                          alt={photo.alt || store.name} 
+                          className="w-full h-full object-cover"
+                        />
+                        {/* 営業時間外（完売）オーバーレイ */}
+                        {soldOut && (
+                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                            <Badge variant="destructive" className="text-sm px-4 py-1">
+                              完売
                             </Badge>
-                          )}
-                        </CardTitle>
-                        <CardDescription className="mt-1">
-                          {store.description || t('stores.defaultDesc')}
-                        </CardDescription>
+                          </div>
+                        )}
                       </div>
-                      <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                        <Ticket className="w-5 h-5 text-primary" />
+                    )}
+                    
+                    {/* 写真がない場合の完売バッジ */}
+                    {!photo && soldOut && (
+                      <div className="absolute top-2 right-2 z-10">
+                        <Badge variant="destructive" className="text-xs">
+                          完売
+                        </Badge>
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-start">
-                      {/* 
-                        価格表示: 正規価格が確定するまで「読み込み中...」を表示
-                        誤った価格（¥500...等）を一瞬でも表示しないためのA案実装
-                        - pricesLoading中はスケルトン的な「読み込み中...」を表示
-                        - dynamicPrices[store.id]が確定したら正規価格を表示
-                      */}
-                      <span className="font-bold text-primary text-xl">
-                        {pricesLoading && !dynamicPrices[store.id] 
-                          ? t('common.loading')
-                          : `${formatPrice(getDisplayPrice(store))}${t('stores.priceFrom')}`}
-                      </span>
-                    </div>
-                    <Button 
-                      asChild 
-                      className="w-full" 
-                      size="sm"
-                      disabled={!store.is_open || (pricesLoading && !dynamicPrices[store.id])}
-                    >
-                      <Link to={`/buy?store=${store.id}`}>
-                        {t('stores.buyFastPass')}
-                        <ArrowRight className="w-4 h-4 ml-1" />
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+                    )}
+                    
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            {store.name}
+                            {soldOut && !photo && (
+                              <Badge variant="secondary" className="text-xs">
+                                {t('stores.closed')}
+                              </Badge>
+                            )}
+                          </CardTitle>
+                          <CardDescription className="mt-1">
+                            {store.description || t('stores.defaultDesc')}
+                          </CardDescription>
+                        </div>
+                        {!photo && (
+                          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                            <Ticket className="w-5 h-5 text-primary" />
+                          </div>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-start">
+                        {/* 
+                          価格表示: 正規価格が確定するまで「読み込み中...」を表示
+                          誤った価格（¥500...等）を一瞬でも表示しないためのA案実装
+                          - pricesLoading中はスケルトン的な「読み込み中...」を表示
+                          - dynamicPrices[store.id]が確定したら正規価格を表示
+                        */}
+                        <span className="font-bold text-primary text-xl">
+                          {pricesLoading && !dynamicPrices[store.id] 
+                            ? t('common.loading')
+                            : `${formatPrice(getDisplayPrice(store))}${t('stores.priceFrom')}`}
+                        </span>
+                      </div>
+                      <Button 
+                        asChild={!soldOut}
+                        className="w-full" 
+                        size="sm"
+                        disabled={soldOut || (pricesLoading && !dynamicPrices[store.id])}
+                        variant={soldOut ? "secondary" : "default"}
+                      >
+                        {soldOut ? (
+                          <span>営業時間外</span>
+                        ) : (
+                          <Link to={`/buy?store=${store.id}`}>
+                            {t('stores.buyFastPass')}
+                            <ArrowRight className="w-4 h-4 ml-1" />
+                          </Link>
+                        )}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>

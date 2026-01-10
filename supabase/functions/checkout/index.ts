@@ -14,7 +14,7 @@ function isPeakTime(): boolean {
   return jstHour >= 18 && jstHour < 21;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });

@@ -11,7 +11,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   // ✅ preflight を必ず 200系で返す
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

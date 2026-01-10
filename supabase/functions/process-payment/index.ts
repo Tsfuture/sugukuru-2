@@ -142,7 +142,7 @@ SUGUKURUサポートチーム
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -213,6 +213,39 @@ serve(async (req) => {
     }
 
     const { store, unitPrice, dynamicFee } = storeResult;
+
+    // ★★★ 営業時間外チェック（二段ロック：サーバー側）★★★
+    // RPC get_facility_status を呼び出して営業時間を判定
+    interface FacilityStatusResult {
+      code: "OK" | "SOLD_OUT" | "NOT_FOUND";
+      is_open: boolean;
+      next_open_at: string | null;
+    }
+    
+    try {
+      const { data: facilityStatus, error: statusError } = await supabase.rpc('get_facility_status', {
+        p_facility_id: facilityId,
+      });
+
+      if (!statusError && facilityStatus) {
+        const status = facilityStatus as FacilityStatusResult;
+        if (status.code === "SOLD_OUT" || !status.is_open) {
+          console.log(`[SECURITY] Purchase blocked - facility ${facilityId} is closed. Status: ${JSON.stringify(status)}`);
+          return new Response(
+            JSON.stringify({ 
+              code: "SOLD_OUT", 
+              message: "営業時間外のため購入できません",
+              next_open_at: status.next_open_at,
+            }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    } catch (rpcError) {
+      // RPC がまだ存在しない場合は警告のみでスキップ（既存動作を維持）
+      console.warn("get_facility_status RPC not available, skipping business hours check:", rpcError);
+    }
+
     const base = store.fastpass_price;
     const extra = dynamicFee;
     const total = unitPrice * qty;

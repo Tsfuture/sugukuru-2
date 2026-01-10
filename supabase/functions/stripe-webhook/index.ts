@@ -15,7 +15,7 @@ const stripe = new Stripe(stripeSecretKey as string, {
 
 console.log("[stripe-webhook] Function initialized");
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   console.log("[stripe-webhook] received request");
   console.log("[stripe-webhook] method:", req.method);
 

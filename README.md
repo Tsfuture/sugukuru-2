@@ -351,6 +351,185 @@ Gmailの「下書き」フォルダに件名「【SUGUKURU】スターターキ�
 - **stores.fastpass_price**: デフォルト 1000 円（後から Supabase Dashboard で変更可能）
 - **stores.is_open**: デフォルト true
 
+---
+
+## 店舗オンボード全自動化（v2）
+
+### 概要
+
+Tally フォームからの申請を受け付け、ほぼ全自動でオンボードできます。
+
+#### 新機能
+
+- **営業時間管理**: 曜日ごと×複数枠（休憩あり対応）
+- **営業時間外 = 完売表示**: 在庫は無制限、営業時間外のみ「完売」として表示
+- **二段ロック**: UI（購入ボタン disabled）+ サーバー（process-payment で 409）
+- **店舗写真**: facility_photos テーブルで管理、代表写真をカードに表示
+- **Tally Webhook 対応**: onboarding-intake Edge Function で申請を自動受付
+
+### セットアップ手順
+
+#### 1. マイグレーション適用
+
+```bash
+supabase db push
+# または
+supabase migration up
+```
+
+適用されるマイグレーション:
+- `20260110000000_facility_onboarding_schema.sql`
+  - facilities テーブル拡張（is_published, min/max_price, timezone, category）
+  - facility_photos テーブル
+  - facility_open_intervals テーブル
+  - onboarding_requests テーブル
+  - RPC: is_facility_open_at / get_facility_status
+
+#### 2. Storage バケット作成
+
+Supabase Dashboard > Storage で以下のバケットを作成:
+
+| バケット名 | Public | 用途 |
+|-----------|--------|------|
+| `facility-images` | ✅ ON | 店舗写真（Tally添付→永続化） |
+| `facility-assets` | ✅ ON | QRコード・スターターキットPDF |
+
+#### 3. Edge Function デプロイ
+
+```bash
+# onboarding-intake（Tally Webhook受信）
+supabase functions deploy onboarding-intake
+
+# process-payment（営業時間チェック追加済み）
+supabase functions deploy process-payment
+```
+
+#### 4. Edge Function シークレット設定
+
+```bash
+supabase secrets set ONBOARDING_WEBHOOK_SECRET=<YOUR_TALLY_WEBHOOK_SECRET>
+supabase secrets set SUPABASE_URL=https://xxxx.supabase.co
+supabase secrets set <REDACTED_SERVICE_ROLE_KEY>
+supabase secrets set APP_BASE_URL=https://sugukuru-2.pages.dev
+```
+
+#### 5. Tally Webhook 設定
+
+1. Tally でオンボードフォームを作成
+2. フォーム設定 > Integrations > Webhooks を開く
+3. Webhook URL を設定: `https://<project-ref>.supabase.co/functions/v1/onboarding-intake`
+4. Header に追加: `x-tally-signature: <YOUR_TALLY_WEBHOOK_SECRET>`
+
+フォームフィールド（推奨）:
+- `施設名` / `facility_name` (必須)
+- `メール` / `email` (必須)
+- `最低価格` / `min_price`
+- `最高価格` / `max_price`
+- `カテゴリ` / `category`
+- `住所` / `address`
+- `営業時間（月曜日）` ～ `営業時間（日曜日）` 例: "09:00-12:00, 13:00-17:00"
+- `写真` / `photo` (ファイルアップロード)
+
+### 運用コマンド
+
+```bash
+# 申請IDからオンボード（推奨）
+APP_BASE_URL=https://sugukuru-2.pages.dev npm run onboard:facility -- \
+  --request-id 18c59bc7-3249-4248-874c-6c1dbbb7953d \
+  --publish true \
+  --send-email false
+
+# ヘルパースクリプト経由（推奨）
+APP_BASE_URL=https://sugukuru-2.pages.dev ./scripts/onboard_from_request.sh \
+  18c59bc7-3249-4248-874c-6c1dbbb7953d --publish
+
+# 従来モード（後方互換）
+npm run onboard:facility -- --name "施設名" --email "xxx@example.com"
+
+# ドライラン（DB変更なし、作成内容の確認用）
+npm run onboard:facility -- --request-id <REQUEST_ID> --dry-run
+```
+
+| オプション | 説明 | デフォルト |
+|-----------|------|-----------|
+| `--request-id` | onboarding_requests のUUID | - |
+| `--publish` | is_published を設定（true: TOPに表示） | false |
+| `--send-email` | Gmail下書き作成 | false |
+| `--dry-run` | 実際のDB変更を行わない | false |
+
+### ワンコマンド導入の実行例
+
+```bash
+# 1. 申請IDを確認
+# Supabase SQL Editor で:
+SELECT id, facility_name, status, created_at 
+FROM onboarding_requests 
+WHERE status = 'pending' 
+ORDER BY created_at DESC;
+
+# 2. ドライランで確認（DB変更なし）
+APP_BASE_URL=https://sugukuru-2.pages.dev npm run onboard:facility -- \
+  --request-id 18c59bc7-3249-4248-874c-6c1dbbb7953d \
+  --publish true \
+  --dry-run
+
+# 3. 本番実行（is_published=true でTOP表示）
+APP_BASE_URL=https://sugukuru-2.pages.dev npm run onboard:facility -- \
+  --request-id 18c59bc7-3249-4248-874c-6c1dbbb7953d \
+  --publish true \
+  --send-email false
+
+# 4. 結果確認
+# - facilityId / buyUrl がコンソールに表示される
+# - buyUrl は https://sugukuru-2.pages.dev/buy?facilityId=<uuid> の形式
+```
+
+### 確認用SQLクエリ
+
+```sql
+-- 施設が作成されたか確認
+SELECT id, name, is_published, buy_url, category, min_price_yen, max_price_yen
+FROM facilities
+WHERE id = '<facilityId>';
+
+-- 営業時間が登録されたか確認
+SELECT day_of_week, start_time, end_time, timezone
+FROM facility_open_intervals
+WHERE facility_id = '<facilityId>'
+ORDER BY day_of_week, start_time;
+
+-- 写真が登録されたか確認
+SELECT id, url, sort_order
+FROM facility_photos
+WHERE facility_id = '<facilityId>'
+ORDER BY sort_order;
+
+-- 申請ステータスが approved になっているか確認
+SELECT id, facility_name, status, updated_at
+FROM onboarding_requests
+WHERE id = '<request_id>';
+
+-- stores テーブルにも登録されているか確認（TOP表示用）
+SELECT id, name, is_open, fastpass_price
+FROM stores
+WHERE id = '<facilityId>';
+```
+
+### 営業時間外の動作
+
+1. **TOP導入店舗一覧**: 営業時間外の店舗は「完売」オーバーレイ表示、ボタン disabled
+2. **/buy ページ**: 営業時間外は警告表示「現在は営業時間外のため購入できません」+ 購入ボタン disabled
+3. **サーバー側（二段ロック）**: process-payment で営業時間チェック、営業時間外なら 409 + SOLD_OUT
+
+```json
+// 営業時間外の場合のサーバーレスポンス（409）
+{
+  "code": "SOLD_OUT",
+  "message": "営業時間外のため購入できません",
+  "next_open_at": "2026-01-11T09:00:00+09:00"
+}
+```
+
 ### トラブルシューティング
 
 | エラー | 対処法 |
@@ -367,7 +546,14 @@ Gmailの「下書き」フォルダに件名「【SUGUKURU】スターターキ�
 
 | ファイル | 変更内容 |
 |----------|----------|
-| `scripts/onboard-facility.ts` | QR透明背景、PDF Title設定、stores自動登録、buyUrl修正 |
+| `scripts/onboard-facility.ts` | QR透明背景、PDF Title設定、stores自動登録、buyUrl修正（レガシー） |
+| `scripts/onboard-facility-v2.ts` | 営業時間・写真・Tally連携対応の新スクリプト（`--request-id` モード対応） |
+| `scripts/onboard_from_request.sh` | 申請IDからオンボードするヘルパースクリプト |
+| `supabase/migrations/20260110000000_facility_onboarding_schema.sql` | 全自動化用DBスキーマ |
+| `supabase/functions/onboarding-intake/index.ts` | Tally Webhook受信Edge Function |
+| `supabase/functions/process-payment/index.ts` | 営業時間チェック（二段ロック）追加 |
+| `src/pages/Index.tsx` | 施設ステータス・写真表示対応 |
+| `src/pages/Buy.tsx` | 営業時間外警告・ボタンdisabled対応 |
 | `assets/starter-kit-template.pdf` | QR埋め込み用テンプレート（手動配置） |
 | `assets/email_template.html` | Gmail下書き用HTMLテンプレート |
 | `.env.example` | 必要な環境変数のサンプル |
@@ -457,4 +643,47 @@ export const MAX_QUANTITY_PER_PURCHASE = 50;
 2. **カテゴリフィルタ**: 飲食/美容/クリニック/その他
 
 カテゴリは現在description/nameからの推測で分類していますが、将来的にはDBにcategoryカラムを追加することを推奨します。
+
+## 店舗オンボーディング（tally-intake）
+
+### 概要
+
+`tally-intake` Edge Function は、Tally フォームからの Webhook を受け取り、店舗オンボーディングリクエストを `onboarding_requests` テーブルに保存します。
+
+### 必要な設定
+
+1. **Supabase Storage bucket**: `facility-images`（画像退避用）
+   - Supabase Dashboard → Storage → New bucket で作成
+   - Public bucket として設定（または RLS で read を許可）
+
+2. **Edge Function secrets** (設定済みのはず):
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ONBOARDING_WEBHOOK_SECRET`
+
+### 動作確認方法
+
+```bash
+# 1. シークレットを環境変数に設定（値はSupabase Dashboard等で確認）
+export ONBOARDING_WEBHOOK_SECRET="your-secret-here"
+
+# 2. テストスクリプトを実行
+bash scripts/test_tally_intake.sh
+
+# 3. Supabase Table Editor で onboarding_requests を確認
+# https://supabase.com/dashboard/project/ghetymkklbfvczlvnxfu/editor
+```
+
+### 保存されるデータ
+
+| カラム | 説明 |
+|--------|------|
+| `facility_name` | 店舗名 |
+| `contact_email` | 連絡先メール |
+| `min_price_yen` | 最低価格 |
+| `max_price_yen` | 最高価格 |
+| `open_intervals` | 営業時間（JSONB配列） |
+| `categories` | カテゴリ（JSONB配列） |
+| `photo_urls` | Storage退避後の画像URL配列 |
+| `notes` | 元のペイロード（JSON文字列） |
 

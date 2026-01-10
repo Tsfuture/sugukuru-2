@@ -41,3 +41,13 @@ supabase/.temp/
 claude-env/
 .venv/
 venv/
+
+# Supabase local temp artifacts
+supabase/.temp/
+
+# Deno lock files
+deno.lock
+
+# Environment files (all locations)
+**/.env
+**/.env.*

@@ -5,6 +5,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
+// Supabase クライアントの storage 操作に必要な最小インターフェース
+interface StorageClient {
+  storage: {
+    from: (bucket: string) => {
+      upload: (path: string, data: ArrayBuffer, options: { contentType: string; upsert: boolean }) => Promise<{ error: Error | null }>;
+      getPublicUrl: (path: string) => { data: { publicUrl: string } };
+    };
+  };
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-tally-signature",
@@ -148,7 +158,7 @@ function parseOpenIntervals(fields: TallyField[]): Array<{ dow: number; start: s
 
 // 画像をダウンロードしてStorageにアップロード
 async function uploadPhoto(
-  supabase: ReturnType<typeof createClient>,
+  supabase: StorageClient,
   url: string,
   requestId: string,
   index: number
@@ -264,7 +274,7 @@ serve(async (req: Request) => {
     // 写真をStorageにアップロード
     const photoUrls: string[] = [];
     for (let i = 0; i < rawPhotoUrls.length; i++) {
-      const uploadedUrl = await uploadPhoto(supabase, rawPhotoUrls[i], tempRequestId, i);
+      const uploadedUrl = await uploadPhoto(supabase as unknown as StorageClient, rawPhotoUrls[i], tempRequestId, i);
       if (uploadedUrl) {
         photoUrls.push(uploadedUrl);
       }

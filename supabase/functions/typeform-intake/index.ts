@@ -198,16 +198,21 @@ async function verifyTypeformSignature(
 // Typeform回答からフィールド値を抽出
 // ─────────────────────────────────────────────────────────────
 interface TypeformAnswer {
-  field: { id: string; ref: string };
-  type: string;
+  field: { 
+    id: string;      // 短いID（例: "abc123"）
+    ref?: string;    // Block Reference UUID（例: "18b822d5-0992-406b-872b-fa339fed9d70"）
+    type?: string;   // フィールドタイプ
+  };
+  type: string;      // 回答タイプ
   text?: string;
   number?: number;
   email?: string;
   url?: string;
   boolean?: boolean;
-  choice?: { label: string };
-  choices?: { labels: string[] };
+  choice?: { label: string; other?: string };
+  choices?: { labels: string[]; other?: string };
   date?: string;
+  file_url?: string;
 }
 
 interface TypeformPayload {
@@ -221,35 +226,103 @@ interface TypeformPayload {
   };
 }
 
+/**
+ * Typeform回答から適切な値を抽出
+ * answer.type に基づいて正しいプロパティから値を取得
+ */
 function extractAnswerValue(answer: TypeformAnswer, mapping: FieldMapping): unknown {
-  switch (mapping.type) {
+  // answer.type を優先して値を抽出（Typeformの実際の回答タイプ）
+  const answerType = answer.type;
+  
+  switch (answerType) {
     case 'text':
-      return answer.text || null;
+    case 'short_text':
+    case 'long_text':
+      return answer.text ?? null;
     case 'email':
-      return answer.email || answer.text || null;
+      return answer.email ?? null;
     case 'number':
-      return answer.number ?? null;
+      return typeof answer.number === 'number' ? answer.number : null;
     case 'url':
-      return answer.url || answer.text || null;
+    case 'website':
+      return answer.url ?? null;
     case 'boolean':
-      return answer.boolean ?? null;
+    case 'yes_no':
+      return typeof answer.boolean === 'boolean' ? answer.boolean : null;
     case 'choice':
-      return answer.choice?.label || null;
+      return answer.choice?.label ?? null;
+    case 'choices':
+      return answer.choices?.labels?.join(', ') ?? null;
+    case 'date':
+      return answer.date ?? null;
+    case 'file_upload':
+      return answer.file_url ?? null;
     default:
-      return answer.text || null;
+      // フォールバック: mapping.type に基づいて抽出
+      switch (mapping.type) {
+        case 'text':
+          return answer.text ?? null;
+        case 'email':
+          return answer.email ?? answer.text ?? null;
+        case 'number':
+          return typeof answer.number === 'number' ? answer.number : null;
+        case 'url':
+          return answer.url ?? answer.text ?? null;
+        case 'boolean':
+          return typeof answer.boolean === 'boolean' ? answer.boolean : null;
+        case 'choice':
+          return answer.choice?.label ?? null;
+        default:
+          return answer.text ?? null;
+      }
   }
 }
 
+/**
+ * Typeformの回答配列をパースし、フィールド名→値のマップを返す
+ * answer.field.ref（UUID）を優先して FIELD_MAPPINGS と照合
+ */
 function parseTypeformAnswers(answers: TypeformAnswer[]): Record<string, unknown> {
   const result: Record<string, unknown> = {};
+  
+  console.log("[typeform-intake] === Answer Parsing Start ===");
+  console.log("[typeform-intake] Total answers:", answers.length);
 
   for (const answer of answers) {
-    // ref でマッピングを検索
-    const mapping = FIELD_MAPPINGS.find((m) => m.ref === answer.field.ref);
+    const fieldId = answer.field?.id || "(no id)";
+    const fieldRef = answer.field?.ref || "(no ref)";
+    const answerType = answer.type || "(no type)";
+    
+    // field.ref（UUID）でマッピングを検索
+    let mapping = FIELD_MAPPINGS.find((m) => m.ref === fieldRef);
+    
+    // デバッグログ（個人情報はマスク）
+    const refShort = fieldRef.length > 10 ? fieldRef.substring(0, 8) + "..." : fieldRef;
+    const matched = mapping ? `✓ ${mapping.fieldName}` : "✗ unmapped";
+    console.log(`[typeform-intake] Field: id=${fieldId}, ref=${refShort}, type=${answerType} -> ${matched}`);
+    
     if (mapping) {
-      result[mapping.fieldName] = extractAnswerValue(answer, mapping);
+      const value = extractAnswerValue(answer, mapping);
+      result[mapping.fieldName] = value;
+      
+      // 抽出結果をログ（個人情報はマスク）
+      let logValue: string;
+      if (value === null || value === undefined) {
+        logValue = "(null)";
+      } else if (mapping.fieldName === 'contact_email' || mapping.fieldName === 'address') {
+        // 個人情報はマスク
+        logValue = String(value).substring(0, 3) + "***";
+      } else if (typeof value === 'string' && value.length > 20) {
+        logValue = value.substring(0, 20) + "...";
+      } else {
+        logValue = String(value);
+      }
+      console.log(`[typeform-intake]   -> Extracted ${mapping.fieldName}: ${logValue}`);
     }
   }
+
+  console.log("[typeform-intake] === Answer Parsing End ===");
+  console.log("[typeform-intake] Extracted field names:", Object.keys(result).join(", ") || "(none)");
 
   return result;
 }
@@ -411,10 +484,10 @@ Deno.serve(async (req) => {
       submitted_at: form_response.submitted_at,
       facility_name: parsed.facility_name as string,
       contact_email: parsed.contact_email as string,
-      price_min_yen: (parsed.price_min_yen as number) || null,
-      price_max_yen: (parsed.price_max_yen as number) || null,
+      price_min_yen: typeof parsed.price_min_yen === 'number' ? parsed.price_min_yen : null,
+      price_max_yen: typeof parsed.price_max_yen === 'number' ? parsed.price_max_yen : null,
       category: category,
-      address: (parsed.address as string) || null,
+      address: typeof parsed.address === 'string' && parsed.address ? parsed.address : null,
       hours_mode: hoursMode,
       hours_common: hoursCommon,
       hours_weekly: hoursWeekly,
@@ -422,6 +495,18 @@ Deno.serve(async (req) => {
       raw_payload: payload,
       status: "pending",
     };
+
+    // 抽出結果サマリーをログ出力（個人情報はマスク）
+    console.log("[typeform-intake] === Insert Data Summary ===");
+    console.log("[typeform-intake] response_id:", insertData.response_id);
+    console.log("[typeform-intake] facility_name:", insertData.facility_name);
+    console.log("[typeform-intake] contact_email:", insertData.contact_email ? insertData.contact_email.substring(0, 3) + "***" : "(null)");
+    console.log("[typeform-intake] price_min_yen:", insertData.price_min_yen);
+    console.log("[typeform-intake] price_max_yen:", insertData.price_max_yen);
+    console.log("[typeform-intake] category:", insertData.category);
+    console.log("[typeform-intake] address:", insertData.address ? insertData.address.substring(0, 5) + "***" : "(null)");
+    console.log("[typeform-intake] hours_mode:", insertData.hours_mode);
+    console.log("[typeform-intake] photo_urls count:", insertData.photo_urls.length);
 
     console.log("[typeform-intake] Inserting submission:", {
       response_id: insertData.response_id,

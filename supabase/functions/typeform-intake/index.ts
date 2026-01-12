@@ -19,9 +19,45 @@ import { createClient } from "@supabase/supabase-js";
 const TYPEFORM_SIGNATURE_HEADER = "typeform-signature";
 
 // ─────────────────────────────────────────────────────────────
-// 質問IDマッピング（config/typeform.ts と同期）
-// Deno環境ではimportが複雑なため、Edge Function内に直接定義
-// 🔴 config/typeform.ts を変更したらここも更新すること
+// Typeform Block Reference IDs
+// config/typeform.ts の TYPEFORM_FIELD_IDS と同期
+// Deno環境ではNode.jsモジュールをimportできないため、ここに複製
+// ─────────────────────────────────────────────────────────────
+const TYPEFORM_FIELD_IDS = {
+  // セクション1: 基本情報
+  typeform_intro_s1: "3e951198-a917-4c19-8f85-9f253edd5eca",
+  facility_name: "18b822d5-0992-406b-872b-fa339fed9d70",
+  contact_email: "a6baf5fd-4710-49de-8260-c271fdb939e0",
+  price_min_yen: "1dcdbf23-043c-4d06-88b3-8f796e32d296",
+  price_max_yen: "ceeae4c7-703b-4f54-b46c-b6be581c1595",
+  category: "149fa8bb-9413-461f-9286-3f1925c34790",
+  address: "e346e267-666b-4c79-a62d-e35bec72c33f",
+  store_photo_upload: "0e984fb8-0fac-4b8b-beb8-364262a2cc41",
+
+  // セクション2: 購入可能時間帯
+  purchase_time_note_s2: "6efdde87-d930-4d13-ac49-b1b0c1a5de94",
+  hours_is_common: "a41bbf41-b975-406f-8d38-25be91257145",
+  common_start_time: "d5bed080-2692-46db-b0a7-f8968e2d53ac",
+  common_end_time: "194eca42-c89f-4289-b3f8-483dbb11ce35",
+
+  // 曜日別時間帯
+  weekday_group_title_11: "012f7d9b-c65b-4199-9ff1-9d0f39cfb56d",
+  mon_hours: "260e4ab3-0583-45d5-8b8b-c56f24cfd237",
+  tue_hours: "000c46f1-a2de-4211-a169-f06d8736fa5a",
+  wed_hours: "f25569b4-e02e-4b0d-96eb-feecb6ee20aa",
+  thu_hours: "840d16a7-de6a-4390-b5cf-7923b8fd3008",
+  fri_hours: "07d421df-beb0-4ec1-ae76-de7cf540d79a",
+  sat_hours: "c286ee47-4311-468a-a87d-744acde2311e",
+  sun_hours: "8c12fb13-599e-482e-a3d2-72f194eaa373",
+  holiday_hours: "289caaa1-571e-4f28-b649-47435a5e0c12",
+
+  // 確認・完了
+  confirm_checked: "5550d5bf-e9b7-4887-8d92-feb62bd91e74",
+  ending_thanks_a: "742d235a-7a18-4411-a4a1-4dd93386df78",
+} as const;
+
+// ─────────────────────────────────────────────────────────────
+// 質問IDマッピング（TYPEFORM_FIELD_IDSを使用）
 // ─────────────────────────────────────────────────────────────
 interface FieldMapping {
   ref: string;
@@ -30,36 +66,25 @@ interface FieldMapping {
 }
 
 const FIELD_MAPPINGS: FieldMapping[] = [
-  { ref: 'facility_name', fieldName: 'facility_name', type: 'text' },
-  { ref: 'contact_email', fieldName: 'contact_email', type: 'email' },
-  { ref: 'price_min', fieldName: 'price_min_yen', type: 'number' },
-  { ref: 'price_max', fieldName: 'price_max_yen', type: 'number' },
-  { ref: 'category', fieldName: 'category', type: 'choice' },
-  { ref: 'address', fieldName: 'address', type: 'text' },
-  { ref: 'hours_all_same', fieldName: 'hours_all_same', type: 'boolean' },
-  { ref: 'hours_common_start', fieldName: 'hours_common_start', type: 'text' },
-  { ref: 'hours_common_end', fieldName: 'hours_common_end', type: 'text' },
-  { ref: 'hours_mon_start', fieldName: 'hours_mon_start', type: 'text' },
-  { ref: 'hours_mon_end', fieldName: 'hours_mon_end', type: 'text' },
-  { ref: 'hours_tue_start', fieldName: 'hours_tue_start', type: 'text' },
-  { ref: 'hours_tue_end', fieldName: 'hours_tue_end', type: 'text' },
-  { ref: 'hours_wed_start', fieldName: 'hours_wed_start', type: 'text' },
-  { ref: 'hours_wed_end', fieldName: 'hours_wed_end', type: 'text' },
-  { ref: 'hours_thu_start', fieldName: 'hours_thu_start', type: 'text' },
-  { ref: 'hours_thu_end', fieldName: 'hours_thu_end', type: 'text' },
-  { ref: 'hours_fri_start', fieldName: 'hours_fri_start', type: 'text' },
-  { ref: 'hours_fri_end', fieldName: 'hours_fri_end', type: 'text' },
-  { ref: 'hours_sat_start', fieldName: 'hours_sat_start', type: 'text' },
-  { ref: 'hours_sat_end', fieldName: 'hours_sat_end', type: 'text' },
-  { ref: 'hours_sun_start', fieldName: 'hours_sun_start', type: 'text' },
-  { ref: 'hours_sun_end', fieldName: 'hours_sun_end', type: 'text' },
-  { ref: 'hours_holiday_start', fieldName: 'hours_holiday_start', type: 'text' },
-  { ref: 'hours_holiday_end', fieldName: 'hours_holiday_end', type: 'text' },
-  { ref: 'photo_url_1', fieldName: 'photo_url_1', type: 'url' },
-  { ref: 'photo_url_2', fieldName: 'photo_url_2', type: 'url' },
-  { ref: 'photo_url_3', fieldName: 'photo_url_3', type: 'url' },
-  { ref: 'photo_url_4', fieldName: 'photo_url_4', type: 'url' },
-  { ref: 'photo_url_5', fieldName: 'photo_url_5', type: 'url' },
+  { ref: TYPEFORM_FIELD_IDS.facility_name, fieldName: 'facility_name', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.contact_email, fieldName: 'contact_email', type: 'email' },
+  { ref: TYPEFORM_FIELD_IDS.price_min_yen, fieldName: 'price_min_yen', type: 'number' },
+  { ref: TYPEFORM_FIELD_IDS.price_max_yen, fieldName: 'price_max_yen', type: 'number' },
+  { ref: TYPEFORM_FIELD_IDS.category, fieldName: 'category', type: 'choice' },
+  { ref: TYPEFORM_FIELD_IDS.address, fieldName: 'address', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.store_photo_upload, fieldName: 'store_photo_upload', type: 'url' },
+  { ref: TYPEFORM_FIELD_IDS.hours_is_common, fieldName: 'hours_is_common', type: 'boolean' },
+  { ref: TYPEFORM_FIELD_IDS.common_start_time, fieldName: 'common_start_time', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.common_end_time, fieldName: 'common_end_time', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.mon_hours, fieldName: 'mon_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.tue_hours, fieldName: 'tue_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.wed_hours, fieldName: 'wed_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.thu_hours, fieldName: 'thu_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.fri_hours, fieldName: 'fri_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.sat_hours, fieldName: 'sat_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.sun_hours, fieldName: 'sun_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.holiday_hours, fieldName: 'holiday_hours', type: 'text' },
+  { ref: TYPEFORM_FIELD_IDS.confirm_checked, fieldName: 'confirm_checked', type: 'boolean' },
 ];
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -285,40 +310,40 @@ Deno.serve(async (req) => {
     }
 
     // 7. hours_mode / hours_common / hours_weekly を構築
-    const hoursAllSame = parsed.hours_all_same === true;
+    const hoursIsCommon = parsed.hours_is_common === true;
     let hoursMode: string | null = null;
     let hoursCommon: object | null = null;
     let hoursWeekly: object | null = null;
 
-    if (hoursAllSame) {
+    if (hoursIsCommon) {
       hoursMode = "common";
-      if (parsed.hours_common_start && parsed.hours_common_end) {
+      if (parsed.common_start_time && parsed.common_end_time) {
         hoursCommon = {
-          start: parsed.hours_common_start,
-          end: parsed.hours_common_end,
+          start: parsed.common_start_time,
+          end: parsed.common_end_time,
         };
       }
-    } else if (parsed.hours_all_same === false) {
+    } else if (parsed.hours_is_common === false) {
       hoursMode = "weekly";
+      // 曜日別時間は "HH:MM - HH:MM" 形式で来るので、そのまま保存
       hoursWeekly = {
-        mon: { start: parsed.hours_mon_start || null, end: parsed.hours_mon_end || null },
-        tue: { start: parsed.hours_tue_start || null, end: parsed.hours_tue_end || null },
-        wed: { start: parsed.hours_wed_start || null, end: parsed.hours_wed_end || null },
-        thu: { start: parsed.hours_thu_start || null, end: parsed.hours_thu_end || null },
-        fri: { start: parsed.hours_fri_start || null, end: parsed.hours_fri_end || null },
-        sat: { start: parsed.hours_sat_start || null, end: parsed.hours_sat_end || null },
-        sun: { start: parsed.hours_sun_start || null, end: parsed.hours_sun_end || null },
-        holiday: { start: parsed.hours_holiday_start || null, end: parsed.hours_holiday_end || null },
+        mon: parsed.mon_hours || null,
+        tue: parsed.tue_hours || null,
+        wed: parsed.wed_hours || null,
+        thu: parsed.thu_hours || null,
+        fri: parsed.fri_hours || null,
+        sat: parsed.sat_hours || null,
+        sun: parsed.sun_hours || null,
+        holiday: parsed.holiday_hours || null,
       };
     }
 
     // 8. photo_urls を配列に
     const photoUrls: string[] = [];
-    for (let i = 1; i <= 5; i++) {
-      const url = parsed[`photo_url_${i}`] as string | undefined;
-      if (url && typeof url === "string" && url.trim()) {
-        photoUrls.push(url.trim());
-      }
+    // store_photo_upload フィールドから写真URLを取得
+    const uploadedPhoto = parsed.store_photo_upload as string | undefined;
+    if (uploadedPhoto && typeof uploadedPhoto === "string" && uploadedPhoto.trim()) {
+      photoUrls.push(uploadedPhoto.trim());
     }
 
     // 9. カテゴリをマッピング

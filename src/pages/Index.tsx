@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Clock, Users, ArrowRight, QrCode, TrendingUp, Loader2, Ticket, User, Search, X } from "lucide-react";
+import { Clock, Users, ArrowRight, QrCode, TrendingUp, Loader2, Ticket, User, Search, X, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import sugukuruLogo from "@/assets/sugukuru-logo.png";
@@ -16,7 +16,15 @@ interface Store {
   description: string | null;
   fastpass_price: number;
   is_open: boolean;
-  category?: string; // カテゴリ（飲食/美容/クリニック等）
+  category?: string | null; // カテゴリ（飲食/美容/クリニック等）
+  // Typeformから取得した追加フィールド
+  price_min_yen?: number | null;
+  price_max_yen?: number | null;
+  address?: string | null;
+  hours_mode?: 'common' | 'weekly' | null;
+  hours_common?: { start: string; end: string } | null;
+  hours_weekly?: Record<string, { start: string | null; end: string | null }> | null;
+  photo_urls?: string[] | null;
 }
 
 // カテゴリ定義（店舗検索用）
@@ -77,43 +85,48 @@ export default function Index() {
         store.name.toLowerCase().includes(query) ||
         (store.description?.toLowerCase().includes(query) ?? false);
       
-      // カテゴリフィルタ（現在はcategoryフィールドがないため、descriptionから推測）
-      // 将来的にはDBにcategoryカラムを追加することを推奨
+      // カテゴリフィルタ（DBのcategoryフィールドを優先、なければdescriptionから推測）
       let matchesCategory = true;
       if (selectedCategory !== "all") {
-        const desc = (store.description || "").toLowerCase();
-        const name = store.name.toLowerCase();
-        const combined = `${name} ${desc}`;
-        
-        switch (selectedCategory) {
-          case "restaurant":
-            matchesCategory = combined.includes("レストラン") || 
-                             combined.includes("restaurant") ||
-                             combined.includes("飲食") ||
-                             combined.includes("カフェ") ||
-                             combined.includes("居酒屋");
-            break;
-          case "beauty":
-            matchesCategory = combined.includes("美容") || 
-                             combined.includes("サロン") ||
-                             combined.includes("beauty") ||
-                             combined.includes("ヘア") ||
-                             combined.includes("ネイル");
-            break;
-          case "clinic":
-            matchesCategory = combined.includes("クリニック") || 
-                             combined.includes("clinic") ||
-                             combined.includes("病院") ||
-                             combined.includes("医院") ||
-                             combined.includes("歯科");
-            break;
-          case "other":
-            // 上記いずれにも該当しない場合
-            const isRestaurant = combined.includes("レストラン") || combined.includes("飲食") || combined.includes("カフェ");
-            const isBeauty = combined.includes("美容") || combined.includes("サロン");
-            const isClinic = combined.includes("クリニック") || combined.includes("病院");
-            matchesCategory = !isRestaurant && !isBeauty && !isClinic;
-            break;
+        // DBにcategoryがある場合はそれを使用
+        if (store.category) {
+          matchesCategory = store.category === selectedCategory;
+        } else {
+          // フォールバック: descriptionから推測
+          const desc = (store.description || "").toLowerCase();
+          const name = store.name.toLowerCase();
+          const combined = `${name} ${desc}`;
+          
+          switch (selectedCategory) {
+            case "restaurant":
+              matchesCategory = combined.includes("レストラン") || 
+                               combined.includes("restaurant") ||
+                               combined.includes("飲食") ||
+                               combined.includes("カフェ") ||
+                               combined.includes("居酒屋");
+              break;
+            case "beauty":
+              matchesCategory = combined.includes("美容") || 
+                               combined.includes("サロン") ||
+                               combined.includes("beauty") ||
+                               combined.includes("ヘア") ||
+                               combined.includes("ネイル");
+              break;
+            case "clinic":
+              matchesCategory = combined.includes("クリニック") || 
+                               combined.includes("clinic") ||
+                               combined.includes("病院") ||
+                               combined.includes("医院") ||
+                               combined.includes("歯科");
+              break;
+            case "other":
+              // 上記いずれにも該当しない場合
+              const isRestaurant = combined.includes("レストラン") || combined.includes("飲食") || combined.includes("カフェ");
+              const isBeauty = combined.includes("美容") || combined.includes("サロン");
+              const isClinic = combined.includes("クリニック") || combined.includes("病院");
+              matchesCategory = !isRestaurant && !isBeauty && !isClinic;
+              break;
+          }
         }
       }
       
@@ -126,7 +139,7 @@ export default function Index() {
       try {
         const { data, error } = await supabase
           .from("stores")
-          .select("id, name, description, fastpass_price, is_open")
+          .select("id, name, description, fastpass_price, is_open, category, price_min_yen, price_max_yen, address, hours_mode, hours_common, hours_weekly, photo_urls")
           .order("name");
 
         if (error) {
@@ -355,6 +368,20 @@ export default function Index() {
                         <CardDescription className="mt-1">
                           {store.description || t('stores.defaultDesc')}
                         </CardDescription>
+                        {/* カテゴリ・住所表示（Typeformから取得した場合） */}
+                        {store.category && (
+                          <Badge variant="outline" className="mt-1 text-xs">
+                            {store.category === 'restaurant' ? '飲食' :
+                             store.category === 'beauty' ? '美容' :
+                             store.category === 'clinic' ? 'クリニック' : 'その他'}
+                          </Badge>
+                        )}
+                        {store.address && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="w-3 h-3" />
+                            <span className="truncate">{store.address}</span>
+                          </div>
+                        )}
                       </div>
                       <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
                         <Ticket className="w-5 h-5 text-primary" />
@@ -368,11 +395,14 @@ export default function Index() {
                         誤った価格（¥500...等）を一瞬でも表示しないためのA案実装
                         - pricesLoading中はスケルトン的な「読み込み中...」を表示
                         - dynamicPrices[store.id]が確定したら正規価格を表示
+                        - price_min_yen/price_max_yenがある場合は価格レンジを表示
                       */}
                       <span className="font-bold text-primary text-xl">
                         {pricesLoading && !dynamicPrices[store.id] 
                           ? t('common.loading')
-                          : `${formatPrice(getDisplayPrice(store))}${t('stores.priceFrom')}`}
+                          : store.price_min_yen && store.price_max_yen
+                            ? `¥${store.price_min_yen.toLocaleString()}〜¥${store.price_max_yen.toLocaleString()}`
+                            : `${formatPrice(getDisplayPrice(store))}${t('stores.priceFrom')}`}
                       </span>
                     </div>
                     <Button 

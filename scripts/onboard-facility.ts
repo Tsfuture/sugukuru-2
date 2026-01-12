@@ -68,6 +68,21 @@ function checkEnvVars() {
   }
 }
 
+// ────────────────────────────────────────────────────────────
+// Typeform Submission から取得する追加フィールド
+// ────────────────────────────────────────────────────────────
+interface TypeformExtendedFields {
+  priceMinYen?: number | null;
+  priceMaxYen?: number | null;
+  category?: string | null;
+  address?: string | null;
+  hoursMode?: 'common' | 'weekly' | null;
+  hoursCommon?: { start: string; end: string } | null;
+  hoursWeekly?: Record<string, { start: string | null; end: string | null }> | null;
+  photoUrls?: string[];
+  submissionId?: string;  // 処理後に更新するため
+}
+
 // コマンドライン引数パース
 interface ParsedArgs {
   name: string;
@@ -76,6 +91,10 @@ interface ParsedArgs {
   qrSizeOverride?: number;  // オーバーライド用（通常は自動計算）
   qrXOverride?: number;     // オーバーライド用
   qrYOverride?: number;     // オーバーライド用
+  // Typeform連携オプション
+  fromTypeform?: string;    // 'latest' または response_id
+  // Typeformから取得した追加フィールド
+  extended?: TypeformExtendedFields;
 }
 
 function parseArgs(): ParsedArgs {
@@ -101,13 +120,21 @@ function parseArgs(): ParsedArgs {
     } else if (args[i] === '--qrY' && args[i + 1]) {
       parsed.qrYOverride = Number(args[i + 1]);
       i++;
+    } else if (args[i] === '--from-typeform' && args[i + 1]) {
+      parsed.fromTypeform = args[i + 1];
+      i++;
     }
   }
 
-  if (!parsed.name || !parsed.email) {
+  // --from-typeformがある場合は name/email は後で取得するので必須チェックをスキップ
+  if (!parsed.fromTypeform && (!parsed.name || !parsed.email)) {
     console.error('❌ 必須引数が不足しています。');
     console.error('使用方法:');
     console.error('  npm run onboard:facility -- --name "施設名" --email "担当者メール" [--storeId "uuid"]');
+    console.error('');
+    console.error('Typeform連携オプション:');
+    console.error('  --from-typeform latest       : pendingの最新1件を取得して正式導入');
+    console.error('  --from-typeform <response_id>: 指定response_idのpendingを導入');
     console.error('');
     console.error('QR位置調整オプション（通常は自動計算）:');
     console.error('  --qrSize <pt>  QRコードサイズ（オーバーライド用）');
@@ -117,6 +144,90 @@ function parseArgs(): ParsedArgs {
   }
 
   return parsed as ParsedArgs;
+}
+
+// ────────────────────────────────────────────────────────────
+// Typeform Submission を取得
+// ────────────────────────────────────────────────────────────
+interface FacilityOnboardingSubmission {
+  id: string;
+  response_id: string;
+  facility_name: string;
+  contact_email: string;
+  price_min_yen: number | null;
+  price_max_yen: number | null;
+  category: string | null;
+  address: string | null;
+  hours_mode: 'common' | 'weekly' | null;
+  hours_common: { start: string; end: string } | null;
+  hours_weekly: Record<string, { start: string | null; end: string | null }> | null;
+  photo_urls: string[];
+  status: string;
+}
+
+// Supabase Client の型（緩い型定義でスクリプトの柔軟性を確保）
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClientType = ReturnType<typeof createClient<any, any>>;
+
+async function fetchTypeformSubmission(
+  supabase: SupabaseClientType,
+  fromTypeform: string
+): Promise<FacilityOnboardingSubmission | null> {
+  let query = supabase
+    .from('facility_onboarding_submissions')
+    .select('*')
+    .eq('status', 'pending');
+
+  if (fromTypeform === 'latest') {
+    // 最新1件を取得
+    query = query.order('created_at', { ascending: false }).limit(1);
+  } else {
+    // 指定response_idを取得
+    query = query.eq('response_id', fromTypeform);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('❌ Typeform submissionの取得に失敗しました:', error);
+    return null;
+  }
+
+  if (!data || data.length === 0) {
+    console.error('❌ 該当するpending状態のsubmissionが見つかりません');
+    if (fromTypeform !== 'latest') {
+      console.error(`   response_id: ${fromTypeform}`);
+    }
+    return null;
+  }
+
+  return data[0] as FacilityOnboardingSubmission;
+}
+
+// ────────────────────────────────────────────────────────────
+// Submission を processed に更新
+// ────────────────────────────────────────────────────────────
+async function markSubmissionProcessed(
+  supabase: SupabaseClientType,
+  submissionId: string,
+  facilityId: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('facility_onboarding_submissions')
+    .update({
+      status: 'processed',
+      processed_facility_id: facilityId,
+      processed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', submissionId);
+
+  if (error) {
+    console.error('⚠️ submission statusの更新に失敗しました:', error);
+    return false;
+  }
+
+  return true;
 }
 
 // Gmail OAuth2クライアント作成
@@ -196,27 +307,106 @@ async function main() {
   checkEnvVars();
 
   // 引数パース
-  const { name, email, storeId, qrSizeOverride, qrXOverride, qrYOverride } = parseArgs();
-  console.log(`📝 施設名: ${name}`);
-  console.log(`📧 メール: ${email}`);
-  if (storeId) console.log(`🏪 店舗ID: ${storeId}`);
-  console.log('');
-
-  // B) Supabase接続
+  let parsedArgs = parseArgs();
+  
+  // B) Supabase接続（先に接続しておく）
   const supabase = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
+  // ────────────────────────────────────────────────────────────
+  // --from-typeform オプション処理
+  // Typeform submissionから施設情報を取得
+  // ────────────────────────────────────────────────────────────
+  if (parsedArgs.fromTypeform) {
+    console.log(`📋 Typeform submissionを取得中... (${parsedArgs.fromTypeform})`);
+    
+    const submission = await fetchTypeformSubmission(supabase, parsedArgs.fromTypeform);
+    if (!submission) {
+      process.exit(1);
+    }
+
+    console.log(`✅ Submission取得成功: ${submission.facility_name}`);
+    console.log(`   response_id: ${submission.response_id}`);
+    console.log('');
+
+    // 取得した情報でparsedArgsを上書き
+    parsedArgs = {
+      ...parsedArgs,
+      name: submission.facility_name,
+      email: submission.contact_email,
+      extended: {
+        priceMinYen: submission.price_min_yen,
+        priceMaxYen: submission.price_max_yen,
+        category: submission.category,
+        address: submission.address,
+        hoursMode: submission.hours_mode,
+        hoursCommon: submission.hours_common,
+        hoursWeekly: submission.hours_weekly,
+        photoUrls: submission.photo_urls || [],
+        submissionId: submission.id,
+      },
+    };
+  }
+
+  const { name, email, storeId, qrSizeOverride, qrXOverride, qrYOverride, extended } = parsedArgs;
+
+  console.log(`📝 施設名: ${name}`);
+  console.log(`📧 メール: ${email}`);
+  if (storeId) console.log(`🏪 店舗ID: ${storeId}`);
+  if (extended) {
+    if (extended.priceMinYen || extended.priceMaxYen) {
+      console.log(`💰 価格レンジ: ¥${extended.priceMinYen ?? '?'} 〜 ¥${extended.priceMaxYen ?? '?'}`);
+    }
+    if (extended.category) console.log(`🏷️  カテゴリ: ${extended.category}`);
+    if (extended.address) console.log(`📍 住所: ${extended.address}`);
+    if (extended.hoursMode) console.log(`⏰ 営業時間モード: ${extended.hoursMode}`);
+    if (extended.photoUrls && extended.photoUrls.length > 0) {
+      console.log(`📷 写真URL: ${extended.photoUrls.length}件`);
+    }
+  }
+  console.log('');
+
   // facilities に insert
   console.log('💾 施設をデータベースに登録中...');
+  const facilityInsertData: Record<string, unknown> = {
+    name,
+    contact_email: email,
+    store_id: storeId || null,
+  };
+
+  // Typeformからの追加フィールドを設定
+  if (extended) {
+    if (extended.priceMinYen !== undefined && extended.priceMinYen !== null) {
+      facilityInsertData.price_min_yen = extended.priceMinYen;
+    }
+    if (extended.priceMaxYen !== undefined && extended.priceMaxYen !== null) {
+      facilityInsertData.price_max_yen = extended.priceMaxYen;
+    }
+    if (extended.category) {
+      facilityInsertData.category = extended.category;
+    }
+    if (extended.address) {
+      facilityInsertData.address = extended.address;
+    }
+    if (extended.hoursMode) {
+      facilityInsertData.hours_mode = extended.hoursMode;
+    }
+    if (extended.hoursCommon) {
+      facilityInsertData.hours_common = extended.hoursCommon;
+    }
+    if (extended.hoursWeekly) {
+      facilityInsertData.hours_weekly = extended.hoursWeekly;
+    }
+    if (extended.photoUrls && extended.photoUrls.length > 0) {
+      facilityInsertData.photo_urls = extended.photoUrls;
+    }
+  }
+
   const { data: facility, error: insertError } = await supabase
     .from('facilities')
-    .insert({
-      name,
-      contact_email: email,
-      store_id: storeId || null,
-    })
+    .insert(facilityInsertData)
     .select('id')
     .single();
 
@@ -232,17 +422,51 @@ async function main() {
   // stores テーブルへの upsert（導入店舗一覧に表示されるため必須）
   // ────────────────────────────────────────────────────────────
   console.log('💾 stores テーブルに登録中（導入店舗一覧表示用）...');
+
+  // 価格設定: Typeformから取得した場合はmin_price/max_priceを使用
+  const storeData: Record<string, unknown> = {
+    id: facilityId,
+    name,
+    description: null,
+    current_wait_time: 30,   // デフォルト待ち時間（分）
+    fastpass_price: 1000,    // デフォルト価格（円）
+    peak_extra_price: 0,     // ピーク時追加料金（円）
+    is_open: true,
+  };
+
+  // Typeformからの追加フィールドをstoresにも設定
+  if (extended) {
+    if (extended.priceMinYen !== undefined && extended.priceMinYen !== null) {
+      storeData.price_min_yen = extended.priceMinYen;
+      storeData.min_price = extended.priceMinYen;  // ダイナミックプライシング用
+    }
+    if (extended.priceMaxYen !== undefined && extended.priceMaxYen !== null) {
+      storeData.price_max_yen = extended.priceMaxYen;
+      storeData.max_price = extended.priceMaxYen;  // ダイナミックプライシング用
+    }
+    if (extended.category) {
+      storeData.category = extended.category;
+    }
+    if (extended.address) {
+      storeData.address = extended.address;
+    }
+    if (extended.hoursMode) {
+      storeData.hours_mode = extended.hoursMode;
+    }
+    if (extended.hoursCommon) {
+      storeData.hours_common = extended.hoursCommon;
+    }
+    if (extended.hoursWeekly) {
+      storeData.hours_weekly = extended.hoursWeekly;
+    }
+    if (extended.photoUrls && extended.photoUrls.length > 0) {
+      storeData.photo_urls = extended.photoUrls;
+    }
+  }
+
   const { error: storeUpsertError } = await supabase
     .from('stores')
-    .upsert({
-      id: facilityId,
-      name,
-      description: null,
-      current_wait_time: 30,   // デフォルト待ち時間（分）
-      fastpass_price: 1000,    // デフォルト価格（円）
-      peak_extra_price: 0,     // ピーク時追加料金（円）
-      is_open: true,
-    }, { onConflict: 'id' });
+    .upsert(storeData, { onConflict: 'id' });
 
   if (storeUpsertError) {
     console.error('⚠️ stores テーブルへの登録に失敗しました:', storeUpsertError);
@@ -468,6 +692,15 @@ async function main() {
     console.log(`PDF URL (pdfUrl): ${pdfUrl}`);
     console.log(`Gmail下書きID (draftId): ${draftId}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    // K) Typeform submissionをprocessedに更新
+    if (extended?.submissionId) {
+      console.log('📋 Typeform submissionを処理済みに更新中...');
+      const updated = await markSubmissionProcessed(supabase, extended.submissionId, facilityId);
+      if (updated) {
+        console.log('✅ Submission status を processed に更新しました\n');
+      }
+    }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errCode = err instanceof Error && 'code' in err ? (err as { code?: number }).code : undefined;

@@ -132,6 +132,15 @@ export type Database = {
           k_step: number
           k_wait: number
           k_env: number
+          // Typeformから取得した追加フィールド
+          price_min_yen: number | null
+          price_max_yen: number | null
+          category: string | null
+          address: string | null
+          hours_mode: 'common' | 'weekly' | null
+          hours_common: { start: string; end: string } | null
+          hours_weekly: Record<string, { start: string | null; end: string | null }> | null
+          photo_urls: string[] | null
         }
         Insert: {
           created_at?: string
@@ -154,6 +163,15 @@ export type Database = {
           k_step?: number
           k_wait?: number
           k_env?: number
+          // Typeformから取得した追加フィールド
+          price_min_yen?: number | null
+          price_max_yen?: number | null
+          category?: string | null
+          address?: string | null
+          hours_mode?: 'common' | 'weekly' | null
+          hours_common?: { start: string; end: string } | null
+          hours_weekly?: Record<string, { start: string | null; end: string | null }> | null
+          photo_urls?: string[] | null
         }
         Update: {
           created_at?: string
@@ -176,6 +194,87 @@ export type Database = {
           k_step?: number
           k_wait?: number
           k_env?: number
+          // Typeformから取得した追加フィールド
+          price_min_yen?: number | null
+          price_max_yen?: number | null
+          category?: string | null
+          address?: string | null
+          hours_mode?: 'common' | 'weekly' | null
+          hours_common?: { start: string; end: string } | null
+          hours_weekly?: Record<string, { start: string | null; end: string | null }> | null
+          photo_urls?: string[] | null
+        }
+        Relationships: []
+      }
+      facility_onboarding_submissions: {
+        Row: {
+          id: string
+          form_id: string
+          response_id: string
+          submitted_at: string
+          facility_name: string
+          contact_email: string
+          price_min_yen: number | null
+          price_max_yen: number | null
+          category: string | null
+          address: string | null
+          hours_mode: 'common' | 'weekly' | null
+          hours_common: { start: string; end: string } | null
+          hours_weekly: Record<string, { start: string | null; end: string | null }> | null
+          photo_urls: string[]
+          raw_payload: Record<string, unknown>
+          status: 'pending' | 'processed' | 'rejected'
+          processed_facility_id: string | null
+          processed_at: string | null
+          rejected_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          form_id: string
+          response_id: string
+          submitted_at: string
+          facility_name: string
+          contact_email: string
+          price_min_yen?: number | null
+          price_max_yen?: number | null
+          category?: string | null
+          address?: string | null
+          hours_mode?: 'common' | 'weekly' | null
+          hours_common?: { start: string; end: string } | null
+          hours_weekly?: Record<string, { start: string | null; end: string | null }> | null
+          photo_urls?: string[]
+          raw_payload: Record<string, unknown>
+          status?: 'pending' | 'processed' | 'rejected'
+          processed_facility_id?: string | null
+          processed_at?: string | null
+          rejected_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          form_id?: string
+          response_id?: string
+          submitted_at?: string
+          facility_name?: string
+          contact_email?: string
+          price_min_yen?: number | null
+          price_max_yen?: number | null
+          category?: string | null
+          address?: string | null
+          hours_mode?: 'common' | 'weekly' | null
+          hours_common?: { start: string; end: string } | null
+          hours_weekly?: Record<string, { start: string | null; end: string | null }> | null
+          photo_urls?: string[]
+          raw_payload?: Record<string, unknown>
+          status?: 'pending' | 'processed' | 'rejected'
+          processed_facility_id?: string | null
+          processed_at?: string | null
+          rejected_reason?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }

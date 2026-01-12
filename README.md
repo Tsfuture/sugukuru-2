@@ -298,6 +298,85 @@ npm run onboard:facility -- --name "テスト施設" --email "担当者@example.
 npm run onboard:facility -- --name "テスト施設" --email "担当者@example.com" --storeId "uuid-here"
 ```
 
+### Typeform連携（自動申込→オンボード）
+
+Typeformのフォームから申込を受け付けて、1コマンドで正式導入まで完了できます。
+
+#### 🔴 手動セットアップ（必須）
+
+1. **Supabase SQL実行**
+   
+   `supabase/migrations/20260112000000_add_typeform_onboarding_tables.sql` をSupabase SQL Editorで実行
+
+2. **Typeform Webhook設定**
+   
+   - TypeformでWebhookを作成
+   - URL: `https://<project>.supabase.co/functions/v1/typeform-intake`
+   - Secret: 任意の文字列を設定（次の手順で使用）
+
+3. **Supabase Edge Function Secrets設定**
+   
+   ```bash
+   supabase secrets set TYPEFORM_WEBHOOK_SECRET=<TypeformのWebhook Secret>
+   ```
+
+4. **Edge Functionデプロイ**
+   
+   ```bash
+   supabase functions deploy typeform-intake
+   ```
+
+5. **質問IDマッピング設定**
+   
+   `config/typeform.ts` の各質問のref IDを実際のTypeformの質問Reference IDに合わせる
+
+#### 使用方法
+
+```bash
+# 最新の pending 申込を正式導入
+npm run onboard:facility -- --from-typeform latest
+
+# 特定の response_id を指定して導入
+npm run onboard:facility -- --from-typeform abc123xyz
+```
+
+#### Typeformで収集する項目
+
+| 項目 | Typeform質問タイプ | 説明 |
+|------|-------------------|------|
+| 店舗/施設名 | Short Text | 必須 |
+| 連絡先メール | Email | 必須 |
+| 価格レンジ下限 | Number | 円 |
+| 価格レンジ上限 | Number | 円 |
+| カテゴリ | Multiple Choice | 飲食/美容/クリニック/その他 |
+| 住所 | Long Text | |
+| 営業時間共通? | Yes/No | 全曜日共通かどうか |
+| 共通開始時刻 | Short Text | HH:MM形式 |
+| 共通終了時刻 | Short Text | HH:MM形式 |
+| 曜日別時間 | Short Text x14 | 月〜日+祝日の開始/終了 |
+| 写真URL 1〜5 | Website | 画像URL |
+
+#### テスト方法
+
+```bash
+# 1. Edge Functionをローカルで起動
+supabase functions serve typeform-intake --env-file .env.local
+
+# 2. 疑似payloadをPOST（別ターミナルで実行）
+curl -X POST http://127.0.0.1:54321/functions/v1/typeform-intake \
+  -H "Content-Type: application/json" \
+  -H "typeform-signature: sha256=<computed_signature>" \
+  -d '{"event_type":"form_response","form_response":{...}}'
+
+# 3. pendingが作成されたか確認
+# Supabase Dashboard > Table Editor > facility_onboarding_submissions
+
+# 4. オンボード実行
+npm run onboard:facility -- --from-typeform latest
+```
+
+---
+
 #### QRコード位置調整
 
 PDFに埋め込むQRコードの位置・サイズはCLI引数で調整できます：

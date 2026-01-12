@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.store-checkout]
 verify_jwt = false
 
+[functions.typeform-intake]
+verify_jwt = false
+
 [functions.setup-card]
 verify_jwt = true
 

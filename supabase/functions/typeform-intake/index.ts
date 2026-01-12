@@ -294,7 +294,7 @@ function parseTypeformAnswers(answers: TypeformAnswer[]): Record<string, unknown
     const answerType = answer.type || "(no type)";
     
     // field.ref（UUID）でマッピングを検索
-    let mapping = FIELD_MAPPINGS.find((m) => m.ref === fieldRef);
+    const mapping = FIELD_MAPPINGS.find((m) => m.ref === fieldRef);
     
     // デバッグログ（個人情報はマスク）
     const refShort = fieldRef.length > 10 ? fieldRef.substring(0, 8) + "..." : fieldRef;
@@ -476,9 +476,10 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 11. facility_onboarding_submissions に INSERT
-    // response_idはユニーク制約があるため、重複時はエラーになる（二重登録防止）
+    // 11. facility_onboarding_submissions に INSERT (または既存をチェック)
+    // (source, response_id) に unique index があるため、重複時は upsert で対応
     const insertData = {
+      source: "typeform",
       form_id: form_response.form_id,
       response_id: form_response.token,
       submitted_at: form_response.submitted_at,
@@ -513,35 +514,126 @@ Deno.serve(async (req) => {
       facility_name: insertData.facility_name,
     });
 
-    const { data, error } = await supabase
+    // まず既存のsubmissionがあるか確認
+    const { data: existingSubmission } = await supabase
       .from("facility_onboarding_submissions")
-      .insert(insertData)
-      .select("id")
-      .single();
+      .select("id, status, processed_facility_id")
+      .eq("source", "typeform")
+      .eq("response_id", form_response.token)
+      .maybeSingle();
 
-    if (error) {
-      // 重複エラーの場合は200を返す（べき等性）
-      if (error.code === "23505") {
-        console.log("[typeform-intake] Duplicate response_id, skipping:", form_response.token);
+    let submissionId: string;
+
+    if (existingSubmission) {
+      // 既存のsubmissionがある場合
+      console.log("[typeform-intake] Found existing submission:", existingSubmission.id);
+      
+      if (existingSubmission.status === "processed") {
+        // 既に処理済みの場合は成功レスポンスを返す
+        console.log("[typeform-intake] Already processed, returning existing facility_id");
         return new Response(
-          JSON.stringify({ message: "Already processed", response_id: form_response.token }),
+          JSON.stringify({
+            message: "Already processed",
+            submission_id: existingSubmission.id,
+            facility_id: existingSubmission.processed_facility_id,
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
+      
+      // pending/failed の場合は再処理
+      submissionId = existingSubmission.id;
+      console.log("[typeform-intake] Re-processing existing submission");
+    } else {
+      // 新規INSERT
+      const { data, error } = await supabase
+        .from("facility_onboarding_submissions")
+        .insert(insertData)
+        .select("id")
+        .single();
 
-      console.error("[typeform-intake] Insert error:", error);
+      if (error) {
+        // 重複エラーの場合は200を返す（べき等性）
+        if (error.code === "23505") {
+          console.log("[typeform-intake] Duplicate response_id (race condition), skipping:", form_response.token);
+          return new Response(
+            JSON.stringify({ message: "Already processed", response_id: form_response.token }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        console.error("[typeform-intake] Insert error:", error);
+        return new Response(
+          JSON.stringify({ error: "Database insert failed", details: error.message }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      submissionId = data.id;
+      console.log("[typeform-intake] Insert success, ID:", submissionId);
+    }
+
+    // 12. RPC で process_one_facility_onboarding_submission を呼び出し
+    console.log("[typeform-intake] Calling RPC process_one_facility_onboarding_submission...");
+    
+    let facilityId: string | null = null;
+    let processingError: string | null = null;
+    
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc("process_one_facility_onboarding_submission", {
+          p_submission_id: submissionId,
+        });
+
+      if (rpcError) {
+        console.error("[typeform-intake] RPC error:", rpcError);
+        processingError = rpcError.message;
+        
+        // status を failed に更新
+        await supabase
+          .from("facility_onboarding_submissions")
+          .update({
+            status: "failed",
+            error_message: processingError,
+          })
+          .eq("id", submissionId);
+      } else {
+        facilityId = rpcResult;
+        console.log("[typeform-intake] RPC success, facility_id:", facilityId);
+      }
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[typeform-intake] RPC exception:", errMessage);
+      processingError = errMessage;
+      
+      // status を failed に更新
+      await supabase
+        .from("facility_onboarding_submissions")
+        .update({
+          status: "failed",
+          error_message: processingError,
+        })
+        .eq("id", submissionId);
+    }
+
+    // 処理結果をレスポンス
+    if (processingError) {
       return new Response(
-        JSON.stringify({ error: "Database insert failed", details: error.message }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          message: "Submission saved but processing failed",
+          submission_id: submissionId,
+          facility_name: insertData.facility_name,
+          error: processingError,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    console.log("[typeform-intake] Insert success, ID:", data.id);
-
     return new Response(
       JSON.stringify({
-        message: "Submission received",
-        submission_id: data.id,
+        message: "Submission processed successfully",
+        submission_id: submissionId,
+        facility_id: facilityId,
         facility_name: insertData.facility_name,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }

@@ -323,7 +323,8 @@ Typeformのフォームから申込を受け付けて、1コマンドで正式�
 4. **Edge Functionデプロイ**
    
    ```bash
-   supabase functions deploy typeform-intake
+   # JWT検証を無効化してデプロイ（Typeform Webhookは認証ヘッダーを送らないため）
+   supabase functions deploy typeform-intake --no-verify-jwt
    ```
 
 5. **質問IDマッピング設定**
@@ -356,23 +357,50 @@ npm run onboard:facility -- --from-typeform abc123xyz
 | 曜日別時間 | Short Text x14 | 月〜日+祝日の開始/終了 |
 | 写真URL 1〜5 | Website | 画像URL |
 
-#### テスト方法
+#### ローカルテスト方法
 
 ```bash
-# 1. Edge Functionをローカルで起動
-supabase functions serve typeform-intake --env-file .env.local
+# 1. Edge Functionをローカルで起動（.env.localにTYPEFORM_WEBHOOK_SECRETを設定）
+supabase functions serve typeform-intake --no-verify-jwt --env-file .env.local
 
-# 2. 疑似payloadをPOST（別ターミナルで実行）
+# 2. 別ターミナルで署名付きリクエストを送信
+# 注意: 署名はHMAC-SHA256(body, secret)をbase64エンコードしたもの
+# Typeformからの実際のWebhookを受けるか、以下のようにテスト用に計算する
+
+# macOS/Linuxでの署名計算例:
+export SECRET="your-webhook-secret"
+export BODY='{"event_type":"form_response","form_response":{"form_id":"test","token":"abc123","submitted_at":"2024-01-01T00:00:00Z","answers":[]}}'
+export SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -binary | base64)
+
 curl -X POST http://127.0.0.1:54321/functions/v1/typeform-intake \
   -H "Content-Type: application/json" \
-  -H "typeform-signature: sha256=<computed_signature>" \
-  -d '{"event_type":"form_response","form_response":{...}}'
+  -H "typeform-signature: sha256=$SIGNATURE" \
+  -d "$BODY"
 
 # 3. pendingが作成されたか確認
 # Supabase Dashboard > Table Editor > facility_onboarding_submissions
 
 # 4. オンボード実行
 npm run onboard:facility -- --from-typeform latest
+```
+
+#### 本番デプロイ手順
+
+```bash
+# 1. Supabaseにログイン
+supabase login
+
+# 2. プロジェクトをリンク（初回のみ）
+supabase link --project-ref <your-project-ref>
+
+# 3. シークレットを設定（Typeform Webhook設定画面のSecretと同じ値）
+supabase secrets set TYPEFORM_WEBHOOK_SECRET="<your-secret>"
+
+# 4. Edge Functionをデプロイ
+supabase functions deploy typeform-intake --no-verify-jwt
+
+# 5. デプロイ確認
+supabase functions list
 ```
 
 ---

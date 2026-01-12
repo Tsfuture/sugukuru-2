@@ -102,55 +102,96 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Typeform署名検証（HMAC-SHA256）
+// Typeform署名検証（HMAC-SHA256 with raw body bytes）
+// Typeformは署名を base64 エンコードで送信する
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Uint8Array を base64 文字列に変換（Deno環境用）
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * タイミングセーフな文字列比較
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+/**
+ * Typeform署名を検証（raw body bytes を使用）
+ * @param bodyBuffer - リクエストボディの ArrayBuffer
+ * @param signatureHeader - Typeform-Signature ヘッダーの値 (形式: sha256=<base64>)
+ * @param secret - TYPEFORM_WEBHOOK_SECRET
+ */
 async function verifyTypeformSignature(
-  rawBody: string,
-  signature: string | null,
+  bodyBuffer: ArrayBuffer,
+  signatureHeader: string | null,
   secret: string
 ): Promise<boolean> {
-  if (!signature) {
+  if (!signatureHeader) {
     console.error("[typeform-intake] Missing signature header");
     return false;
   }
 
-  // Typeformの署名形式: sha256=<hash>
+  // Typeformの署名形式: sha256=<base64_signature>
   const expectedPrefix = "sha256=";
-  if (!signature.startsWith(expectedPrefix)) {
-    console.error("[typeform-intake] Invalid signature format");
+  if (!signatureHeader.startsWith(expectedPrefix)) {
+    console.error("[typeform-intake] Invalid signature format, expected 'sha256=' prefix");
     return false;
   }
 
-  const receivedHash = signature.slice(expectedPrefix.length);
+  const receivedSignatureBase64 = signatureHeader.slice(expectedPrefix.length);
+  console.log("[typeform-intake] Received signature (base64):", receivedSignatureBase64.substring(0, 20) + "...");
 
-  // HMAC-SHA256を計算
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(rawBody);
+  try {
+    // HMAC-SHA256 キーを作成
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
 
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    keyData,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyData,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
 
-  const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
-  const hashArray = Array.from(new Uint8Array(signatureBuffer));
-  const computedHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    // raw body bytes に対して署名を計算
+    const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, bodyBuffer);
+    
+    // 計算した署名を base64 に変換
+    const computedSignatureBase64 = arrayBufferToBase64(signatureBuffer);
+    console.log("[typeform-intake] Computed signature (base64):", computedSignatureBase64.substring(0, 20) + "...");
 
-  // タイミングセーフ比較
-  if (computedHash.length !== receivedHash.length) {
+    // タイミングセーフ比較
+    const isValid = constantTimeEqual(computedSignatureBase64, receivedSignatureBase64);
+    
+    if (!isValid) {
+      console.error("[typeform-intake] Signature mismatch");
+      console.error("[typeform-intake] Expected:", computedSignatureBase64);
+      console.error("[typeform-intake] Received:", receivedSignatureBase64);
+    }
+    
+    return isValid;
+  } catch (err) {
+    console.error("[typeform-intake] Signature verification error:", err);
     return false;
   }
-
-  let result = 0;
-  for (let i = 0; i < computedHash.length; i++) {
-    result |= computedHash.charCodeAt(i) ^ receivedHash.charCodeAt(i);
-  }
-
-  return result === 0;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -244,13 +285,16 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // 1. rawBodyを取得
-    const rawBody = await req.text();
-    console.log("[typeform-intake] Body length:", rawBody.length);
+    // 1. raw body を ArrayBuffer として取得（署名検証前にJSONパースしない）
+    const bodyBuffer = await req.arrayBuffer();
+    console.log("[typeform-intake] Body size (bytes):", bodyBuffer.byteLength);
 
     // 2. 署名ヘッダー取得
     const signature = req.headers.get(TYPEFORM_SIGNATURE_HEADER);
     console.log("[typeform-intake] Signature present:", !!signature);
+    if (signature) {
+      console.log("[typeform-intake] Signature header:", signature.substring(0, 30) + "...");
+    }
 
     // 3. シークレット取得
     const webhookSecret = Deno.env.get("TYPEFORM_WEBHOOK_SECRET");
@@ -261,9 +305,10 @@ Deno.serve(async (req) => {
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
+    console.log("[typeform-intake] Secret configured, length:", webhookSecret.length);
 
-    // 4. 署名検証
-    const isValid = await verifyTypeformSignature(rawBody, signature, webhookSecret);
+    // 4. 署名検証（raw body bytes を使用）
+    const isValid = await verifyTypeformSignature(bodyBuffer, signature, webhookSecret);
     if (!isValid) {
       console.error("[typeform-intake] Invalid signature");
       return new Response(
@@ -273,7 +318,8 @@ Deno.serve(async (req) => {
     }
     console.log("[typeform-intake] Signature verified OK");
 
-    // 5. Payloadパース
+    // 5. 署名検証後にJSONをパース
+    const rawBody = new TextDecoder().decode(bodyBuffer);
     const payload: TypeformPayload = JSON.parse(rawBody);
     console.log("[typeform-intake] Event type:", payload.event_type);
     console.log("[typeform-intake] Form ID:", payload.form_response.form_id);

@@ -24,10 +24,10 @@ export const TYPEFORM_FIELD_IDS = {
   typeform_intro_s1: "3e951198-a917-4c19-8f85-9f253edd5eca",
   facility_name: "18b822d5-0992-406b-872b-fa339fed9d70",
   contact_email: "a6baf5fd-4710-49de-8260-c271fdb939e0",
-  price_min_yen: "1dcdbf23-043c-4d06-88b3-8f796e32d296",
+  price_min_yen: "1dcbdf23-043c-4d06-88b3-8f796e32d296",
   price_max_yen: "ceeae4c7-703b-4f54-b46c-b6be581c1595",
   category: "149fa8bb-9413-461f-9286-3f1925c34790",
-  address: "e346e267-666b-4c79-a62d-e35bec72c33f",
+  address: "e346e267-66b6-4c79-a62d-e35bec72c33f",
   store_photo_upload: "0e984fb8-0fac-4b8b-beb8-364262a2cc41",
 
   // セクション2: 購入可能時間帯

@@ -341,6 +341,38 @@ npm run onboard:facility -- --from-typeform latest
 npm run onboard:facility -- --from-typeform abc123xyz
 ```
 
+#### 既存facility連携（processed facility → UI表示可能化）
+
+Typeformで自動処理（processed）されたfacilityを、UIに表示可能な状態にして、Gmail下書きを生成するオプションです。
+
+```bash
+# 基本使用方法（processed facility をUI表示可能に + Gmail下書き生成）
+npm run onboard:facility -- --facility-id <uuid> --email <email>
+
+# is_published=true もセット（任意）
+npm run onboard:facility -- --facility-id <uuid> --email <email> --publish true
+
+# Gmail下書き生成をスキップ
+npm run onboard:facility -- --facility-id <uuid> --email <email> --send-email false
+
+# フルオプション例
+npm run onboard:facility -- --facility-id "12345678-1234-1234-1234-123456789abc" --email "facility@example.com" --publish true --send-email true
+```
+
+| オプション | 必須 | 説明 |
+|------------|------|------|
+| `--facility-id <uuid>` | Yes | 既存facilityのUUID |
+| `--email <email>` | Yes | 担当者メール（Gmail下書き送信先） |
+| `--publish true/false` | No | trueならfacilities.is_published=trueに設定 |
+| `--send-email true/false` | No | trueならGmail下書き生成、falseならスキップ（デフォルト: true） |
+
+**処理内容:**
+1. facilities テーブルから指定UUIDの施設を取得
+2. stores テーブルに同一IDの行がなければ新規作成（既存なら再利用）
+3. facilities.store_id と buy_url を更新
+4. QRコード/PDF生成、Storage上げ
+5. Gmail下書き作成（--send-email true の場合）
+
 #### Typeformで収集する項目
 
 | 項目 | Typeform質問タイプ | 説明 |

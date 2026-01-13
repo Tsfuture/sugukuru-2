@@ -95,6 +95,10 @@ interface ParsedArgs {
   fromTypeform?: string;    // 'latest' または response_id
   // Typeformから取得した追加フィールド
   extended?: TypeformExtendedFields;
+  // 既存facility使用オプション（Typeform processed facility用）
+  facilityId?: string;      // 既存facilityのUUID
+  publish?: boolean;        // trueならis_published=trueをセット
+  sendEmail?: boolean;      // trueならGmail下書き生成、falseならスキップ
 }
 
 function parseArgs(): ParsedArgs {
@@ -123,7 +127,31 @@ function parseArgs(): ParsedArgs {
     } else if (args[i] === '--from-typeform' && args[i + 1]) {
       parsed.fromTypeform = args[i + 1];
       i++;
+    } else if (args[i] === '--facility-id' && args[i + 1]) {
+      parsed.facilityId = args[i + 1];
+      i++;
+    } else if (args[i] === '--publish' && args[i + 1]) {
+      parsed.publish = args[i + 1].toLowerCase() === 'true';
+      i++;
+    } else if (args[i] === '--send-email' && args[i + 1]) {
+      parsed.sendEmail = args[i + 1].toLowerCase() === 'true';
+      i++;
     }
+  }
+
+  // --facility-idがある場合は既存facilityを使用するのでname不要、emailは必須
+  if (parsed.facilityId) {
+    if (!parsed.email) {
+      console.error('❌ --facility-id を使用する場合、--email は必須です。');
+      console.error('使用方法:');
+      console.error('  npm run onboard:facility -- --facility-id <uuid> --email <email> [--publish true/false] [--send-email true/false]');
+      process.exit(1);
+    }
+    // sendEmailのデフォルトはtrue
+    if (parsed.sendEmail === undefined) {
+      parsed.sendEmail = true;
+    }
+    return parsed as ParsedArgs;
   }
 
   // --from-typeformがある場合は name/email は後で取得するので必須チェックをスキップ
@@ -131,6 +159,12 @@ function parseArgs(): ParsedArgs {
     console.error('❌ 必須引数が不足しています。');
     console.error('使用方法:');
     console.error('  npm run onboard:facility -- --name "施設名" --email "担当者メール" [--storeId "uuid"]');
+    console.error('');
+    console.error('既存facility使用オプション（Typeform processed facility用）:');
+    console.error('  --facility-id <uuid>   : 既存facilityのUUIDを指定（stores連携 + QR/PDF/Gmail生成）');
+    console.error('  --email <email>        : 担当者メール（必須）');
+    console.error('  --publish true/false   : trueならfacilities.is_published=trueに設定');
+    console.error('  --send-email true/false: trueならGmail下書き生成、falseならスキップ（デフォルト: true）');
     console.error('');
     console.error('Typeform連携オプション:');
     console.error('  --from-typeform latest       : pendingの最新1件を取得して正式導入');
@@ -300,6 +334,246 @@ function createMimeMessage(
   return messageParts.join('\r\n');
 }
 
+// ────────────────────────────────────────────────────────────
+// 共通処理: QR生成、PDF生成、Storage上げ、Gmail下書き作成
+// --facility-id モードと通常モードの両方から呼び出される
+// ────────────────────────────────────────────────────────────
+async function generateAssetsAndEmail(
+  supabase: SupabaseClientType,
+  facilityId: string,
+  facilityName: string,
+  email: string,
+  buyUrl: string,
+  qrSizeOverride?: number,
+  qrXOverride?: number,
+  qrYOverride?: number,
+  sendEmail: boolean = true
+): Promise<void> {
+  console.log(`📍 Cloudflare本番URL: ${CLOUDFLARE_PROD_ORIGIN}`);
+
+  // D) QR生成（PNG、透明背景）
+  console.log('📱 QRコードを生成中（透明背景）...');
+  const qrBuffer = await QRCode.toBuffer(buyUrl, {
+    type: 'png',
+    width: 512,
+    margin: 0,
+    color: {
+      dark: '#000000',  // QRコード部分は黒
+      light: '#0000',   // 背景は透明（RGBA形式で alpha=0）
+    },
+  });
+  console.log('✅ QRコード生成完了\n');
+
+  // E) Storage にQRアップロード
+  console.log('☁️  QRコードをSupabase Storageにアップロード中...');
+  const qrPath = `facilities/${facilityId}/qr.png`;
+  const { error: qrUploadError } = await supabase.storage
+    .from('facility-assets')
+    .upload(qrPath, qrBuffer, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+
+  if (qrUploadError) {
+    console.error('❌ QRコードのアップロードに失敗しました:', qrUploadError);
+    console.error('💡 Supabase Storageで "facility-assets" バケット（public）を作成してください。');
+    process.exit(1);
+  }
+
+  const { data: qrPublicData } = supabase.storage
+    .from('facility-assets')
+    .getPublicUrl(qrPath);
+
+  const qrUrl = qrPublicData.publicUrl;
+  console.log(`✅ QR URL: ${qrUrl}\n`);
+
+  // F) PDF生成（テンプレにQR合成）
+  console.log('📄 スターターキットPDFを生成中...');
+  const templatePath = resolve(process.cwd(), 'assets/starter-kit-template.pdf');
+
+  if (!existsSync(templatePath)) {
+    console.error('❌ テンプレートPDFが見つかりません。');
+    console.error(`💡 以下のパスにPDFを配置してください: ${templatePath}`);
+    process.exit(1);
+  }
+
+  const templateBytes = readFileSync(templatePath);
+  const pdfDoc = await PDFDocument.load(templateBytes);
+
+  // PDF メタデータ設定
+  pdfDoc.setTitle(PDF_TITLE);
+
+  // QR画像をPDFに埋め込み
+  const qrImage = await pdfDoc.embedPng(qrBuffer);
+  const pages = pdfDoc.getPages();
+  const firstPage = pages[0];
+  const pageWidth = firstPage.getWidth();
+  const pageHeight = firstPage.getHeight();
+
+  // Safe Box の縦幅（上限Y - 下限Y）
+  const safeBoxHeight = SAFE_BOX_TOP_Y_PT - SAFE_BOX_BOTTOM_Y_PT;
+  
+  // Safe Box の横幅（ページ幅 - 左右マージン×2）
+  const safeBoxWidth = pageWidth - (2 * SAFE_BOX_SIDE_MARGIN_PT);
+  
+  // 最大正方形サイズ = min(横幅, 縦幅)（オーバーライドがあればそちらを使用）
+  const qrSize = qrSizeOverride ?? Math.min(safeBoxWidth, safeBoxHeight);
+  
+  // X座標: Safe Box内で水平中央
+  const qrX = qrXOverride ?? (SAFE_BOX_SIDE_MARGIN_PT + (safeBoxWidth - qrSize) / 2);
+  
+  // Y座標: Safe Box内で垂直中央
+  const qrY = qrYOverride ?? (SAFE_BOX_BOTTOM_Y_PT + (safeBoxHeight - qrSize) / 2);
+  
+  console.log(`📐 QR Safe Box 配置計算:`);
+  console.log(`   - ページサイズ: ${pageWidth.toFixed(1)} x ${pageHeight.toFixed(1)} pt`);
+  console.log(`   - Safe Box 上限Y: ${SAFE_BOX_TOP_Y_PT} pt（これより上はテキスト領域）`);
+  console.log(`   - Safe Box 下限Y: ${SAFE_BOX_BOTTOM_Y_PT} pt（これより下はロゴ領域）`);
+  console.log(`   - Safe Box サイズ: ${safeBoxWidth.toFixed(1)} x ${safeBoxHeight.toFixed(1)} pt`);
+  console.log(`   - QRサイズ: ${qrSize.toFixed(1)} pt (正方形)`);
+  console.log(`   - QR配置: x=${qrX.toFixed(1)}, y=${qrY.toFixed(1)}`);
+
+  firstPage.drawImage(qrImage, {
+    x: qrX,
+    y: qrY,
+    width: qrSize,
+    height: qrSize,
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  const pdfBuffer = Buffer.from(pdfBytes);
+  console.log(`✅ PDF生成完了\n`);
+
+  // G) Storage にPDFアップロード
+  console.log('☁️  PDFをSupabase Storageにアップロード中...');
+  const pdfPath = `facilities/${facilityId}/starter-kit.pdf`;
+  const { error: pdfUploadError } = await supabase.storage
+    .from('facility-assets')
+    .upload(pdfPath, pdfBuffer, {
+      contentType: 'application/pdf',
+      upsert: true,
+    });
+
+  if (pdfUploadError) {
+    console.error('❌ PDFのアップロードに失敗しました:', pdfUploadError);
+    process.exit(1);
+  }
+
+  const { data: pdfPublicData } = supabase.storage
+    .from('facility-assets')
+    .getPublicUrl(pdfPath);
+
+  const pdfUrl = pdfPublicData.publicUrl;
+  console.log(`✅ PDF URL: ${pdfUrl}\n`);
+
+  // H) facilities を update（URL情報を保存）
+  console.log('💾 施設情報を更新中...');
+  const { error: updateError } = await supabase
+    .from('facilities')
+    .update({
+      buy_url: buyUrl,
+      qr_png_path: qrPath,
+      starter_pdf_path: pdfPath,
+    })
+    .eq('id', facilityId);
+
+  if (updateError) {
+    console.error('❌ 施設情報の更新に失敗しました:', updateError);
+    process.exit(1);
+  }
+  console.log('✅ 施設情報を更新しました\n');
+
+  // I) Gmail下書き作成（sendEmail=falseならスキップ）
+  if (!sendEmail) {
+    console.log('📧 Gmail下書き生成をスキップします（--send-email false）\n');
+    
+    // 最終出力
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🎉 オンボード処理が完了しました！');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`施設ID (facilityId): ${facilityId}`);
+    console.log(`施設名 (facilityName): ${facilityName}`);
+    console.log(`購入URL (buyUrl): ${buyUrl}`);
+    console.log(`QR画像URL (qrUrl): ${qrUrl}`);
+    console.log(`PDF URL (pdfUrl): ${pdfUrl}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    return;
+  }
+
+  console.log('📧 Gmail下書きを作成中...');
+  const gmail = createGmailClient();
+
+  // 認証中のアカウント確認
+  try {
+    const profileRes = await gmail.users.getProfile({ userId: 'me' });
+    console.log(`📬 下書き作成先: ${profileRes.data.emailAddress}`);
+  } catch (err) {
+    console.error('⚠️ Gmail認証情報の確認に失敗しました:', err);
+  }
+
+  // メール本文作成（HTMLテンプレート読み込み）
+  const templateHtmlPath = resolve(process.cwd(), 'assets/email_template.html');
+  let htmlBody = readFileSync(templateHtmlPath, 'utf-8');
+
+  htmlBody = htmlBody
+    .replace(/{{FACILITY_NAME}}/g, facilityName)
+    .replace(/{{BUY_URL}}/g, buyUrl)
+    .replace(/{{QR_URL}}/g, qrUrl)
+    .replace(/{{PDF_URL}}/g, pdfUrl);
+
+  const subject = `【SUGUKURU】スターターキット（QRコード） - ${facilityName}`;
+
+  const rawMessage = createMimeMessage(
+    email,
+    process.env.GMAIL_FROM!,
+    subject,
+    htmlBody,
+    pdfBuffer,
+    qrBuffer,
+    facilityName.replace(/[^a-zA-Z0-9]/g, '_')
+  );
+
+  const encodedMessage = Buffer.from(rawMessage)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  try {
+    const draftRes = await gmail.users.drafts.create({
+      userId: 'me',
+      requestBody: {
+        message: {
+          raw: encodedMessage,
+        },
+      },
+    });
+
+    const draftId = draftRes.data.id;
+    console.log(`✅ 下書き作成完了 (Draft ID: ${draftId})\n`);
+
+    // 最終出力
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🎉 オンボード処理が完了しました！');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`施設ID (facilityId): ${facilityId}`);
+    console.log(`施設名 (facilityName): ${facilityName}`);
+    console.log(`購入URL (buyUrl): ${buyUrl}`);
+    console.log(`QR画像URL (qrUrl): ${qrUrl}`);
+    console.log(`PDF URL (pdfUrl): ${pdfUrl}`);
+    console.log(`Gmail下書きID (draftId): ${draftId}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errCode = err instanceof Error && 'code' in err ? (err as { code?: number }).code : undefined;
+    console.error('❌ Gmail下書きの作成に失敗しました:', errMsg);
+    if (errCode === 401) {
+      console.error('💡 Gmail認証トークンが無効です。npm run gmail:auth を実行してください。');
+    }
+    process.exit(1);
+  }
+}
+
 async function main() {
   console.log('🚀 施設オンボード処理を開始します...\n');
 
@@ -350,8 +624,135 @@ async function main() {
     };
   }
 
-  const { name, email, storeId, qrSizeOverride, qrXOverride, qrYOverride, extended } = parsedArgs;
+  const { name, email, storeId, qrSizeOverride, qrXOverride, qrYOverride, extended, facilityId: existingFacilityId, publish, sendEmail } = parsedArgs;
 
+  // ────────────────────────────────────────────────────────────
+  // --facility-id オプション処理（既存facilityを使用）
+  // Typeform processed facilityをstoresに連携してUI表示可能にする
+  // ────────────────────────────────────────────────────────────
+  let facilityId: string;
+  let facilityName: string;
+  
+  if (existingFacilityId) {
+    console.log(`🔗 既存facility使用モード: ${existingFacilityId}`);
+    console.log(`📧 メール: ${email}`);
+    console.log(`📝 publish: ${publish ?? false}`);
+    console.log(`📧 sendEmail: ${sendEmail ?? true}`);
+    console.log('');
+
+    // A) facilities をその id で取得（無ければエラー）
+    console.log('💾 既存facilityを取得中...');
+    const { data: existingFacility, error: fetchError } = await supabase
+      .from('facilities')
+      .select('*')
+      .eq('id', existingFacilityId)
+      .single();
+
+    if (fetchError || !existingFacility) {
+      console.error(`❌ facility が見つかりません: ${existingFacilityId}`);
+      console.error('   fetchError:', fetchError);
+      process.exit(1);
+    }
+
+    facilityId = existingFacility.id;
+    facilityName = existingFacility.name || 'Unnamed Facility';
+    console.log(`✅ 施設取得成功: ${facilityName}`);
+    console.log(`   施設ID: ${facilityId}`);
+    console.log('');
+
+    // B) stores に `id = <facilityId>` の行が存在するか確認
+    console.log('💾 stores テーブルを確認中...');
+    const { data: existingStore, error: storeCheckError } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('id', facilityId)
+      .single();
+
+    if (storeCheckError && storeCheckError.code !== 'PGRST116') {
+      // PGRST116 = 行が見つからない（これは正常）
+      console.error('⚠️ stores テーブルの確認に失敗しました:', storeCheckError);
+    }
+
+    if (existingStore) {
+      console.log(`✅ 既存storeを再利用: ${existingStore.id}\n`);
+    } else {
+      // stores を新規作成
+      console.log('💾 stores を新規作成中...');
+      const storeData: Record<string, unknown> = {
+        id: facilityId,
+        name: facilityName,
+        description: existingFacility.description || null,
+        current_wait_time: 30,   // デフォルト待ち時間（分）
+        fastpass_price: existingFacility.price_min_yen || 1000,    // デフォルト価格（円）
+        peak_extra_price: 0,     // ピーク時追加料金（円）
+        is_open: true,
+        // 既存facilityからのフィールドをコピー
+        price_min_yen: existingFacility.price_min_yen || null,
+        price_max_yen: existingFacility.price_max_yen || null,
+        min_price: existingFacility.price_min_yen || 1000,
+        max_price: existingFacility.price_max_yen || 1000,
+        category: existingFacility.category || null,
+        address: existingFacility.address || null,
+        hours_mode: existingFacility.hours_mode || null,
+        hours_common: existingFacility.hours_common || null,
+        hours_weekly: existingFacility.hours_weekly || null,
+        photo_urls: existingFacility.photo_urls || [],
+      };
+
+      const { error: storeInsertError } = await supabase
+        .from('stores')
+        .upsert(storeData, { onConflict: 'id' });
+
+      if (storeInsertError) {
+        console.error('❌ stores の作成に失敗しました:', storeInsertError);
+        process.exit(1);
+      }
+      console.log('✅ stores を作成しました\n');
+    }
+
+    // C) facilities.store_id を stores.id にセット（nullなら更新）
+    // D) buy_url を生成して facilities.buy_url へ保存
+    const qrBaseUrl = CLOUDFLARE_PROD_ORIGIN.replace(/\/$/, '');
+    const buyUrl = `${qrBaseUrl}/buy?store=${facilityId}`;
+    console.log(`🔗 購入URL（QRリンク先）: ${buyUrl}`);
+
+    const facilityUpdateData: Record<string, unknown> = {
+      store_id: facilityId,
+      buy_url: buyUrl,
+    };
+    if (publish) {
+      facilityUpdateData.is_published = true;
+    }
+
+    const { error: facilityUpdateError } = await supabase
+      .from('facilities')
+      .update(facilityUpdateData)
+      .eq('id', facilityId);
+
+    if (facilityUpdateError) {
+      console.error('⚠️ facilities.store_id の更新に失敗しました:', facilityUpdateError);
+    } else {
+      console.log('✅ facilities.store_id と buy_url を更新しました\n');
+    }
+
+    // E) 既存のスターターキットPDF/QR生成と Gmail下書き生成ロジックを実行
+    // 以下、buyUrl, facilityId, facilityName を使って処理を続行
+    await generateAssetsAndEmail(
+      supabase,
+      facilityId,
+      facilityName,
+      email,
+      buyUrl,
+      qrSizeOverride,
+      qrXOverride,
+      qrYOverride,
+      sendEmail ?? true
+    );
+    
+    return;
+  }
+
+  // 通常モード（新規facility作成）
   console.log(`📝 施設名: ${name}`);
   console.log(`📧 メール: ${email}`);
   if (storeId) console.log(`🏪 店舗ID: ${storeId}`);
@@ -415,7 +816,7 @@ async function main() {
     process.exit(1);
   }
 
-  const facilityId = facility.id;
+  facilityId = facility.id;
   console.log(`✅ 施設ID: ${facilityId}\n`);
 
   // ────────────────────────────────────────────────────────────
@@ -482,233 +883,27 @@ async function main() {
   const qrBaseUrl = CLOUDFLARE_PROD_ORIGIN.replace(/\/$/, '');
   const buyUrl = `${qrBaseUrl}/buy?store=${facilityId}`;
   console.log(`🔗 購入URL（QRリンク先）: ${buyUrl}`);
-  console.log(`📍 Cloudflare本番URL: ${CLOUDFLARE_PROD_ORIGIN}`);
 
-  // D) QR生成（PNG、透明背景）
-  console.log('📱 QRコードを生成中（透明背景）...');
-  const qrBuffer = await QRCode.toBuffer(buyUrl, {
-    type: 'png',
-    width: 512,
-    margin: 0,
-    color: {
-      dark: '#000000',  // QRコード部分は黒
-      light: '#0000',   // 背景は透明（RGBA形式で alpha=0）
-    },
-  });
-  console.log('✅ QRコード生成完了\n');
-
-  // E) Storage にQRアップロード
-  console.log('☁️  QRコードをSupabase Storageにアップロード中...');
-  const qrPath = `facilities/${facilityId}/qr.png`;
-  const { error: qrUploadError } = await supabase.storage
-    .from('facility-assets')
-    .upload(qrPath, qrBuffer, {
-      contentType: 'image/png',
-      upsert: true,
-    });
-
-  if (qrUploadError) {
-    console.error('❌ QRコードのアップロードに失敗しました:', qrUploadError);
-    console.error('💡 Supabase Storageで "facility-assets" バケット（public）を作成してください。');
-    process.exit(1);
-  }
-
-  const { data: qrPublicData } = supabase.storage
-    .from('facility-assets')
-    .getPublicUrl(qrPath);
-
-  const qrUrl = qrPublicData.publicUrl;
-  console.log(`✅ QR URL: ${qrUrl}\n`);
-
-  // F) PDF生成（テンプレにQR合成）
-  console.log('📄 スターターキットPDFを生成中...');
-  const templatePath = resolve(process.cwd(), 'assets/starter-kit-template.pdf');
-
-  if (!existsSync(templatePath)) {
-    console.error('❌ テンプレートPDFが見つかりません。');
-    console.error(`💡 以下のパスにPDFを配置してください: ${templatePath}`);
-    process.exit(1);
-  }
-
-  const templateBytes = readFileSync(templatePath);
-  const pdfDoc = await PDFDocument.load(templateBytes);
-
-  // PDF メタデータ設定
-  pdfDoc.setTitle(PDF_TITLE);
-
-  // QR画像をPDFに埋め込み
-  const qrImage = await pdfDoc.embedPng(qrBuffer);
-  const pages = pdfDoc.getPages();
-  const firstPage = pages[0];
-  const pageWidth = firstPage.getWidth();
-  const pageHeight = firstPage.getHeight();
-
-  // ────────────────────────────────────────────────────────────
-  // QR Safe Box 配置ロジック
-  // [重要] テキストとの被りを完全に防ぐ固定ルール:
-  // - Safe Box上限: SAFE_BOX_TOP_Y_PT（QR上端はこれ以下）
-  // - Safe Box下限: SAFE_BOX_BOTTOM_Y_PT（QR下端はこれ以上）
-  // - 左右マージン: SAFE_BOX_SIDE_MARGIN_PT
-  // - この範囲内で最大正方形を中央配置
-  // ────────────────────────────────────────────────────────────
-  
-  // Safe Box の縦幅（上限Y - 下限Y）
-  const safeBoxHeight = SAFE_BOX_TOP_Y_PT - SAFE_BOX_BOTTOM_Y_PT;
-  
-  // Safe Box の横幅（ページ幅 - 左右マージン×2）
-  const safeBoxWidth = pageWidth - (2 * SAFE_BOX_SIDE_MARGIN_PT);
-  
-  // 最大正方形サイズ = min(横幅, 縦幅)（オーバーライドがあればそちらを使用）
-  const qrSize = qrSizeOverride ?? Math.min(safeBoxWidth, safeBoxHeight);
-  
-  // X座標: Safe Box内で水平中央
-  // boxLeft = SAFE_BOX_SIDE_MARGIN_PT
-  // x = boxLeft + (boxWidth - size) / 2
-  const qrX = qrXOverride ?? (SAFE_BOX_SIDE_MARGIN_PT + (safeBoxWidth - qrSize) / 2);
-  
-  // Y座標: Safe Box内で垂直中央
-  // boxBottom = SAFE_BOX_BOTTOM_Y_PT
-  // y = boxBottom + (boxHeight - size) / 2
-  const qrY = qrYOverride ?? (SAFE_BOX_BOTTOM_Y_PT + (safeBoxHeight - qrSize) / 2);
-  
-  console.log(`📐 QR Safe Box 配置計算:`);
-  console.log(`   - ページサイズ: ${pageWidth.toFixed(1)} x ${pageHeight.toFixed(1)} pt`);
-  console.log(`   - Safe Box 上限Y: ${SAFE_BOX_TOP_Y_PT} pt（これより上はテキスト領域）`);
-  console.log(`   - Safe Box 下限Y: ${SAFE_BOX_BOTTOM_Y_PT} pt（これより下はロゴ領域）`);
-  console.log(`   - Safe Box サイズ: ${safeBoxWidth.toFixed(1)} x ${safeBoxHeight.toFixed(1)} pt`);
-  console.log(`   - QRサイズ: ${qrSize.toFixed(1)} pt (正方形)`);
-  console.log(`   - QR配置: x=${qrX.toFixed(1)}, y=${qrY.toFixed(1)}`);
-
-  firstPage.drawImage(qrImage, {
-    x: qrX,
-    y: qrY,
-    width: qrSize,
-    height: qrSize,
-  });
-
-  const pdfBytes = await pdfDoc.save();
-  const pdfBuffer = Buffer.from(pdfBytes);
-  console.log(`✅ PDF生成完了\n`);
-
-  // G) Storage にPDFアップロード
-  console.log('☁️  PDFをSupabase Storageにアップロード中...');
-  const pdfPath = `facilities/${facilityId}/starter-kit.pdf`;
-  const { error: pdfUploadError } = await supabase.storage
-    .from('facility-assets')
-    .upload(pdfPath, pdfBuffer, {
-      contentType: 'application/pdf',
-      upsert: true,
-    });
-
-  if (pdfUploadError) {
-    console.error('❌ PDFのアップロードに失敗しました:', pdfUploadError);
-    process.exit(1);
-  }
-
-  const { data: pdfPublicData } = supabase.storage
-    .from('facility-assets')
-    .getPublicUrl(pdfPath);
-
-  const pdfUrl = pdfPublicData.publicUrl;
-  console.log(`✅ PDF URL: ${pdfUrl}\n`);
-
-  // H) facilities を update（URL情報を保存）
-  console.log('💾 施設情報を更新中...');
-  const { error: updateError } = await supabase
-    .from('facilities')
-    .update({
-      buy_url: buyUrl,
-      qr_png_path: qrPath,
-      starter_pdf_path: pdfPath,
-    })
-    .eq('id', facilityId);
-
-  if (updateError) {
-    console.error('❌ 施設情報の更新に失敗しました:', updateError);
-    process.exit(1);
-  }
-  console.log('✅ 施設情報を更新しました\n');
-
-  // I) Gmail下書き作成
-  console.log('📧 Gmail下書きを作成中...');
-  const gmail = createGmailClient();
-
-  // 認証中のアカウント確認
-  try {
-    const profileRes = await gmail.users.getProfile({ userId: 'me' });
-    console.log(`📬 下書き作成先: ${profileRes.data.emailAddress}`);
-  } catch (err) {
-    console.error('⚠️ Gmail認証情報の確認に失敗しました:', err);
-  }
-
-  // メール本文作成（HTMLテンプレート読み込み）
-  const templateHtmlPath = resolve(process.cwd(), 'assets/email_template.html');
-  let htmlBody = readFileSync(templateHtmlPath, 'utf-8');
-
-  htmlBody = htmlBody
-    .replace(/{{FACILITY_NAME}}/g, name)
-    .replace(/{{BUY_URL}}/g, buyUrl)
-    .replace(/{{QR_URL}}/g, qrUrl)
-    .replace(/{{PDF_URL}}/g, pdfUrl);
-
-  const subject = `【SUGUKURU】スターターキット（QRコード） - ${name}`;
-
-  const rawMessage = createMimeMessage(
+  // D) 共通処理: QR生成、PDF生成、Storage上げ、Gmail下書き作成
+  await generateAssetsAndEmail(
+    supabase,
+    facilityId,
+    name,
     email,
-    process.env.GMAIL_FROM!,
-    subject,
-    htmlBody,
-    pdfBuffer,
-    qrBuffer,
-    name.replace(/[^a-zA-Z0-9]/g, '_')
+    buyUrl,
+    qrSizeOverride,
+    qrXOverride,
+    qrYOverride,
+    true // 通常モードは常にGmail下書き生成
   );
 
-  const encodedMessage = Buffer.from(rawMessage)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
-  try {
-    const draftRes = await gmail.users.drafts.create({
-      userId: 'me',
-      requestBody: {
-        message: {
-          raw: encodedMessage,
-        },
-      },
-    });
-
-    const draftId = draftRes.data.id;
-    console.log(`✅ 下書き作成完了 (Draft ID: ${draftId})\n`);
-
-    // J) 最終出力
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🎉 オンボード処理が完了しました！');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`施設ID (facilityId): ${facilityId}`);
-    console.log(`購入URL (buyUrl): ${buyUrl}`);
-    console.log(`QR画像URL (qrUrl): ${qrUrl}`);
-    console.log(`PDF URL (pdfUrl): ${pdfUrl}`);
-    console.log(`Gmail下書きID (draftId): ${draftId}`);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
-    // K) Typeform submissionをprocessedに更新
-    if (extended?.submissionId) {
-      console.log('📋 Typeform submissionを処理済みに更新中...');
-      const updated = await markSubmissionProcessed(supabase, extended.submissionId, facilityId);
-      if (updated) {
-        console.log('✅ Submission status を processed に更新しました\n');
-      }
+  // E) Typeform submissionをprocessedに更新
+  if (extended?.submissionId) {
+    console.log('📋 Typeform submissionを処理済みに更新中...');
+    const updated = await markSubmissionProcessed(supabase, extended.submissionId, facilityId);
+    if (updated) {
+      console.log('✅ Submission status を processed に更新しました\n');
     }
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    const errCode = err instanceof Error && 'code' in err ? (err as { code?: number }).code : undefined;
-    console.error('❌ Gmail下書きの作成に失敗しました:', errMsg);
-    if (errCode === 401) {
-      console.error('💡 Gmail認証トークンが無効です。npm run gmail:auth を実行してください。');
-    }
-    process.exit(1);
   }
 }
 
